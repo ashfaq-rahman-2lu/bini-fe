@@ -1,0 +1,20 @@
+# Installed dependencies and build output
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Browser tests and coverage
+test-results/
+playwright-report/
+playwright/.cache/
+coverage/
+
+# Local configuration; public templates stay versioned
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+*.log
+.DS_Store
