@@ -1,8 +1,11 @@
-import { ArrowUpRight, ArrowRight, BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, FileText, Layers3, LoaderCircle, Plus, Search, UploadCloud, X } from 'lucide-react'
+import { ArrowUpRight, ArrowRight, BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Layers3, LoaderCircle, Plus, Search, UnlockKeyhole, UploadCloud, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, Navigate, Link, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type SortingState } from '@tanstack/react-table'
+import { StatementUpload, UnlockPdf } from './PdfTools'
+import { Investments, InvestmentUpload, InvestmentReview } from './Investments'
+import { CsvUpdate } from './CsvUpdater'
 import { api, ApiError, dateLabel, jsonRequest, money, type Account, type ImportReview, type Ledger, type ReviewRow, type Transaction, type TransactionDetail } from './api'
 
 function ErrorBox({ error }: { error: unknown }) {
@@ -21,14 +24,22 @@ export default function App() {
       <div className="workspace-label">PERSONAL WORKSPACE</div>
       <nav aria-label="Main navigation">
         <NavLink to="/transactions"><BookOpen size={18} /> Transactions</NavLink>
+        <NavLink to="/investments"><Layers3 size={18} /> Investments</NavLink>
+        <NavLink to="/csv-update"><FileSpreadsheet size={18} /> Update CSV</NavLink>
+        <NavLink to="/pdf-unlock"><UnlockKeyhole size={18} /> Unlock PDF</NavLink>
         <NavLink to="/imports"><UploadCloud size={18} /> Import statement</NavLink>
       </nav>
       <div className="sidebar-bottom"><span className="small-dot" /> Local workspace<div>EBL statements · BDT</div></div>
     </aside>
     <main className="main-area"><Routes>
       <Route path="/transactions" element={<Transactions />} />
+      <Route path="/investments" element={<Investments />} />
+      <Route path="/csv-update" element={<CsvUpdate />} />
+      <Route path="/investments/imports/new" element={<InvestmentUpload />} />
+      <Route path="/investments/imports/:id" element={<InvestmentReview />} />
       <Route path="/imports" element={<Navigate to="/imports/new" replace />} />
-      <Route path="/imports/new" element={<Upload />} />
+      <Route path="/pdf-unlock" element={<UnlockPdf />} />
+      <Route path="/imports/new" element={<StatementUpload />} />
       <Route path="/imports/:id" element={<Review />} />
       <Route path="*" element={<Navigate to="/transactions" replace />} />
     </Routes></main>
@@ -117,40 +128,12 @@ function Details({ id, close }: { id: string; close: () => void }) {
       <ErrorBox error={error} />{isPending ? <Loading /> : data && <>
         <Badge kind={data.direction}>{data.direction}</Badge><div className="detail-amount">BDT {money(data.amount)}</div><p>{dateLabel(data.posting_date)}</p><p className="full-description">{data.description}</p>
         <div className="detail-meta"><span>Statement-provided balance</span><strong>BDT {money(data.balance)}</strong></div>
+        <label className="password-label"><span>Bank transaction ID (for manual investment matching)</span><input readOnly value={data.id} onFocus={event => event.currentTarget.select()} /></label>
         <h3>Source occurrences <span className="subtle">({data.sources.length})</span></h3>
         {data.sources.map(source => <details className="source-detail" key={source.statement_id + source.ordinal}><summary><FileText size={16} /><span>{source.filename}<small>Page {source.page} · Row {source.ordinal}</small></span></summary><pre>{source.raw_text}</pre><Link to={'/imports/' + source.statement_id} onClick={close}>View statement review <ArrowUpRight size={14} /></Link></details>)}
       </>}
     </div>
   </dialog>
-}
-
-function Upload() {
-  const navigate = useNavigate()
-  const [file, setFile] = useState<File | null>(null)
-  const [password, setPassword] = useState('')
-  const [localError, setLocalError] = useState('')
-  const mutation = useMutation({ mutationFn: (data: FormData) => api<ImportReview>('/imports', { method: 'POST', body: data }),
-    onSuccess: data => navigate('/imports/' + data.id),
-    onSettled: (_data, _error, variables) => { variables.delete('password'); setPassword('') },
-  })
-  function submit(event: FormEvent) {
-    event.preventDefault(); setLocalError('')
-    if (!file) { setLocalError('Choose a PDF statement first.'); return }
-    if (file.size > 10 * 1024 * 1024) { setLocalError('PDF must be at most 10 MB.'); return }
-    const data = new FormData(); data.append('file', file); data.append('password', password)
-    mutation.mutate(data)
-  }
-  return <>
-    <header className="page-header"><div><div className="eyebrow">BRING YOUR STATEMENTS TOGETHER</div><h1>Import a statement</h1><p>Review once. Keep every transaction accounted for.</p></div></header>
-    <div className="upload-layout"><section className="panel upload-panel"><div className="step-label"><span>1</span> Upload <ArrowRight size={15} /><span className="inactive">2</span> Review <ArrowRight size={15} /><span className="inactive">3</span> Confirm</div>
-      <form onSubmit={submit}>
-        <label className={`drop-zone ${file ? 'has-file' : ''}`}><UploadCloud size={34} strokeWidth={1.4} /><strong>{file ? file.name : 'Choose your bank statement'}</strong><span>{file ? `${(file.size / 1024).toFixed(0)} KB · Click to replace` : 'Select an EBL PDF from your device'}</span><span className="file-limit">PDF · Up to 10 MB · 50 pages</span><input aria-label="PDF statement" type="file" accept="application/pdf,.pdf" disabled={mutation.isPending} onChange={e => { setFile(e.target.files?.[0] || null); mutation.reset() }} /></label>
-        <label className="password-label"><span>PDF password</span><input aria-label="PDF password" aria-describedby="password-help" type="password" autoComplete="off" placeholder="Enter the statement password" value={password} onChange={e => setPassword(e.target.value)} disabled={mutation.isPending} /><small id="password-help">Your password is used to open this import and is never saved.</small></label>
-        <ErrorBox error={localError ? new Error(localError) : mutation.error} />
-        <button className="primary-button wide" type="submit" disabled={mutation.isPending || !file}>{mutation.isPending ? <><LoaderCircle size={17} className="animate-spin" /> Reading and checking statement…</> : <>Continue to review <ArrowRight size={17} /></>}</button>
-      </form>
-    </section><aside className="import-info"><div className="eyebrow">WHAT HAPPENS NEXT</div><h2>A careful import,<br />every time.</h2><div><CheckCircle2 size={19} /><p><strong>Balances checked</strong>We reconcile the opening balance, movements, and closing balance.</p></div><div><Layers3 size={19} /><p><strong>Overlaps identified</strong>Transactions already in your ledger are linked to their sources.</p></div><div><Check size={19} /><p><strong>You confirm the result</strong>Review the extracted rows before adding anything to your ledger.</p></div><p className="support-note">Currently supports EBL statements in BDT. Scanned PDFs and other bank layouts are not supported yet.</p></aside></div>
-  </>
 }
 
 function Review() {
@@ -162,15 +145,16 @@ function Review() {
   const data = query.data
   const decision = useMutation({ mutationFn: ({ row, value }: { row: ReviewRow; value: string }) => api<ImportReview>('/imports/' + id + '/decisions', jsonRequest('PATCH', { decisions: [{ row_id: row.id, decision: value === 'auto' ? null : value === 'new' ? 'new' : 'match', transaction_id: ['auto', 'new'].includes(value) ? null : value }] })), onSuccess: result => client.setQueryData(['import', id], result) })
   const confirm = useMutation({ mutationFn: () => api<ImportReview>('/imports/' + id + '/confirm', jsonRequest('POST', { expected_revision: data!.revision })), onSuccess: result => {
-    client.setQueryData(['import', id], result); client.invalidateQueries({ queryKey: ['transactions'] }); client.invalidateQueries({ queryKey: ['accounts'] }); client.invalidateQueries({ queryKey: ['transaction'] })
+    client.setQueryData(['import', id], result); client.invalidateQueries({ queryKey: ['transactions'] }); client.invalidateQueries({ queryKey: ['accounts'] }); client.invalidateQueries({ queryKey: ['transaction'] }); client.invalidateQueries({ queryKey: ['imports'] })
   }, onError: error => { if (error instanceof ApiError && error.status === 409) query.refetch() } })
-  const cancel = useMutation({ mutationFn: () => api<void>('/imports/' + id, { method: 'DELETE' }), onSuccess: () => { client.removeQueries({ queryKey: ['import', id] }); navigate('/transactions') } })
+  const cancel = useMutation({ mutationFn: () => api<void>('/imports/' + id, { method: 'DELETE' }), onSuccess: () => { client.removeQueries({ queryKey: ['import', id] }); client.invalidateQueries({ queryKey: ['imports'] }); navigate('/imports/new') } })
   const busy = decision.isPending || confirm.isPending || cancel.isPending
   if (query.isPending) return <Loading />
   if (!data) return <><ErrorBox error={query.error} /><Link to="/imports/new">Return to upload</Link></>
   const valid = data.checks.every(c => c.passed)
   return <>
     <header className="page-header"><div><div className="eyebrow">{data.status === 'confirmed' ? 'IMPORT COMPLETE' : 'CHECK BEFORE YOU SAVE'}</div><h1>{data.status === 'confirmed' ? 'Statement imported' : 'Review your statement'}</h1><p>{data.filename} · {dateLabel(data.period_from)} – {dateLabel(data.period_to)}</p></div><Badge kind={data.status === 'confirmed' || valid ? 'success' : 'error'}>{data.status === 'confirmed' ? 'Confirmed' : valid ? 'Reconciled' : 'Needs attention'}</Badge></header>
+    <Link className="review-back" to="/imports/new">← Back to statement uploads</Link>
     {data.status === 'confirmed' && <div className="success-banner"><CheckCircle2 size={21} /><div><strong>Your ledger is up to date.</strong><span>{data.summary.new} new transactions added · {data.summary.duplicate} existing transactions linked</span></div><Link className="secondary-button" to="/transactions">View transactions <ArrowRight size={16} /></Link></div>}
     <section className="stats-grid"><Stat label="Statement rows" value={String(data.rows.length)} /><Stat label="New transactions" value={String(data.summary.new)} tone="credit" /><Stat label="Matched duplicates" value={String(data.summary.duplicate)} /><Stat label="Needs a decision" value={String(data.summary.unresolved)} /></section>
     <section className="panel checks-panel"><div className="section-heading"><h2>Financial checks</h2><span className="subtle">{data.account.label} · BDT</span></div><div className="balance-strip"><span>Opening <strong>{money(data.opening_balance)}</strong></span><ArrowRight size={16} /><span>Closing <strong>{money(data.closing_balance)}</strong></span></div><div className="checks-grid">{data.checks.map(check => <div key={check.code} className={check.passed ? 'check-pass' : 'check-fail'}><span>{check.passed ? <CheckCircle2 size={15} /> : <X size={15} />}{check.label}</span><small>{check.detail}</small></div>)}</div>{!valid && <div className="error-box">This statement cannot be confirmed. Review the extracted source text; the parser must be corrected before retrying.</div>}</section>

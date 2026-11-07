@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { test, expect, type Page } from '@playwright/test'
 
 const backend = path.resolve(process.env.BACKEND_DIR || '../backend')
@@ -13,7 +14,7 @@ function pdf(options: Record<string, unknown> = {}) {
 }
 
 test.beforeEach(() => {
-  execFileSync(python, ['-c', "from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"], { env })
+  execFileSync(python, ['-c', "from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"], { env })
 })
 
 async function upload(page: Page, file: ReturnType<typeof pdf>, password = 'test-only-password') {
@@ -30,7 +31,7 @@ test('upload, review, confirm, filter, inspect sources and reuse an import', asy
   await page.goto('/transactions')
   await expect(page.getByText('Your ledger starts here')).toBeVisible()
   await page.getByRole('link', { name: 'Import statement', exact: true }).first().click()
-  await expect(page.getByRole('heading', { name: 'Import a statement' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Import statements' })).toBeVisible()
   await page.screenshot({ path: 'test-results/upload-desktop.png', fullPage: true })
   await upload(page, file)
   await expect(page.getByRole('heading', { name: 'Review your statement' })).toBeVisible()
@@ -75,7 +76,8 @@ test('wrong password, failed reconciliation and cancellation', async ({ page }) 
   await expect(page.getByRole('heading', { name: 'Review your statement' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Confirm import' })).toBeDisabled()
   await page.getByRole('button', { name: 'Cancel import' }).click()
-  await expect(page.getByText('Your ledger starts here')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Import statements' })).toBeVisible()
+  await expect(page.locator('.recent-import')).toHaveCount(0)
 })
 
 test('overlapping statements link existing sources', async ({ page }) => {
@@ -112,4 +114,76 @@ test('an ambiguous payment can be kept separately before confirmation', async ({
   await page.getByRole('button', { name: 'Confirm import' }).click()
   await page.getByRole('link', { name: 'View transactions', exact: true }).click()
   await expect(page.getByText('1–3 of 3 transactions')).toBeVisible()
+})
+
+
+test('unlock a PDF, download locally and import the unlocked copy', async ({ page }, testInfo) => {
+  const file = pdf()
+  await page.goto('/pdf-unlock')
+  await page.getByLabel('PDF to unlock').setInputFiles(file)
+  await page.getByLabel('PDF password', { exact: true }).fill('wrong')
+  await page.getByRole('button', { name: 'Unlock PDF', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Incorrect PDF password.')
+  await expect(page.getByLabel('PDF password', { exact: true })).toHaveValue('')
+  await page.getByLabel('PDF password', { exact: true }).fill('test-only-password')
+  await page.getByRole('button', { name: 'Unlock PDF', exact: true }).click()
+  await expect(page.getByText('Your unlocked copy is ready.')).toBeVisible()
+  const downloading = page.waitForEvent('download')
+  await page.getByRole('link', { name: 'Download unlocked PDF' }).click()
+  const download = await downloading
+  expect(download.suggestedFilename()).toBe('synthetic_unlocked.pdf')
+  const saved = testInfo.outputPath('synthetic_unlocked.pdf')
+  await download.saveAs(saved)
+  execFileSync(python, ['-c', "from pypdf import PdfReader; import sys; r=PdfReader(sys.argv[1]); assert not r.is_encrypted; assert len(r.pages)==1; assert 'Test deposit' in r.pages[0].extract_text()", saved], { env })
+  expect(await page.evaluate(() => localStorage.length)).toBe(0)
+  await page.screenshot({ path: 'test-results/unlock-desktop.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  await page.screenshot({ path: 'test-results/unlock-mobile.png', fullPage: true })
+  await page.goto('/transactions')
+  await expect(page.getByText('Your ledger starts here')).toBeVisible()
+  await upload(page, { ...file, name: 'synthetic_unlocked.pdf', buffer: readFileSync(saved) }, '')
+  await expect(page.getByRole('heading', { name: 'Review your statement' })).toBeVisible()
+  await page.getByRole('button', { name: 'Confirm import' }).click()
+  await expect(page.getByRole('heading', { name: 'Statement imported' })).toBeVisible()
+})
+
+test('multiple PDFs continue after failure, retry individually, and review overlaps', async ({ page }) => {
+  const first = { ...pdf(), name: 'first.pdf' }
+  const second = { ...pdf({ memo: 'Overlapping selection' }), name: 'second.pdf' }
+  const third = { ...pdf({ account: '222222222222', password: 'different-password' }), name: 'third.pdf' }
+  const fourth = { ...pdf({ account: '333333333333' }), name: 'fourth.pdf' }
+  await page.goto('/imports/new')
+  await page.getByLabel('PDF statement').setInputFiles([first, second, third, fourth])
+  await page.getByLabel('PDF password', { exact: true }).fill('test-only-password')
+  await page.getByLabel('Password for statement 3', { exact: true }).fill('wrong')
+  await page.getByRole('button', { name: 'Process 4 statements' }).click()
+  await expect(page.getByRole('button', { name: 'Retry failed statements' })).toBeEnabled()
+  await expect(page.getByRole('alert')).toHaveText('Incorrect PDF password.')
+  await expect(page.getByRole('link', { name: 'Review statement', exact: false }).filter({ hasText: /Review statement [124]/ })).toHaveCount(3)
+  await expect(page.getByLabel('PDF password', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Password for statement 3', { exact: true })).toHaveValue('')
+  await page.getByLabel('Password for statement 3', { exact: true }).fill('different-password')
+  await page.getByRole('button', { name: 'Retry failed statements' }).click()
+  await expect(page.getByRole('link', { name: 'Review statement 3', exact: true })).toBeVisible()
+  await expect(page.locator('.recent-import')).toHaveCount(4)
+  await expect(page.getByRole('button', { name: 'Upload complete' })).toBeDisabled()
+  await page.screenshot({ path: 'test-results/batch-desktop.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  await page.screenshot({ path: 'test-results/batch-mobile.png', fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.getByRole('link', { name: 'Review statement 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Confirm import' }).click()
+  await expect(page.getByRole('heading', { name: 'Statement imported' })).toBeVisible()
+  await page.getByRole('link', { name: 'Back to statement uploads' }).click()
+  await page.reload()
+  await expect(page.locator('.recent-import')).toHaveCount(4)
+  await page.getByRole('link').filter({ has: page.getByText('second.pdf', { exact: true }) }).click()
+  await expect(page.locator('.badge-match')).toHaveCount(2)
+  await page.getByRole('button', { name: 'Confirm import' }).click()
+  await page.getByRole('link', { name: 'View transactions', exact: true }).click()
+  await expect(page.getByText('1–2 of 2 transactions')).toBeVisible()
+  await page.getByRole('button', { name: /Coffee purchase/ }).click()
+  await expect(page.getByText('Source occurrences')).toContainText('(2)')
 })
