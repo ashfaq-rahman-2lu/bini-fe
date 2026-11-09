@@ -13,7 +13,7 @@ from sqlalchemy import text
 from datetime import date, timedelta
 from test_reconciliation import seed_transfers
 with engine.begin() as c:
-    c.execute(text('TRUNCATE investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE'))
+    c.execute(text('TRUNCATE operation_jobs, investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE'))
 seed_transfers([((date(2025, 9, 1)+timedelta(days=n)).isoformat(), 'credit' if n % 2 else 'debit', str(100+n), ('EFT INFLOW ' if n % 2 else 'Other Bank Transfer SKB-BEFTN ')+'Synthetic transfer '+str(n)) for n in range(55)])
 `], { env })
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message))

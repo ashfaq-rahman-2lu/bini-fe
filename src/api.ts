@@ -10,6 +10,7 @@ export interface ReviewRow extends Transaction {
   explanation: string; candidates: Transaction[];
 }
 export interface ImportReview {
+  reconciliation_job_id?: string;
   id: string; filename: string; status: 'draft' | 'confirmed'; account: Account;
   period_from: string; period_to: string; opening_balance: string; closing_balance: string;
   checks: { code: string; label: string; passed: boolean; detail: string }[];

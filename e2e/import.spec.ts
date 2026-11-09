@@ -15,7 +15,7 @@ function pdf(options: Record<string, unknown> = {}) {
 }
 
 test.beforeEach(() => {
-  execFileSync(python, ['-c', "from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"], { env })
+  execFileSync(python, ['-c', "from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE operation_jobs, investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"], { env })
 })
 
 async function upload(page: Page, file: ReturnType<typeof pdf>, password = 'test-only-password') {
