@@ -1,3 +1,4 @@
+import { visit, reload } from './auth-helpers'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { readFileSync } from 'node:fs'
@@ -18,7 +19,7 @@ test.beforeEach(() => {
 })
 
 async function upload(page: Page, file: ReturnType<typeof pdf>, password = 'test-only-password') {
-  await page.goto('/imports/new')
+  await visit(page, '/imports/new')
   await page.getByLabel('PDF statement').setInputFiles(file)
   await page.getByLabel('PDF password', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Continue to review' }).click()
@@ -28,7 +29,7 @@ test('upload, review, confirm, filter, inspect sources and reuse an import', asy
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   const file = pdf()
-  await page.goto('/transactions')
+  await visit(page, '/transactions')
   await expect(page.getByText('Your ledger starts here')).toBeVisible()
   await page.getByRole('link', { name: 'Import statement', exact: true }).first().click()
   await expect(page.getByRole('heading', { name: 'Import statements' })).toBeVisible()
@@ -48,7 +49,7 @@ test('upload, review, confirm, filter, inspect sources and reuse an import', asy
   await page.getByRole('button', { name: 'Apply filters' }).click()
   await expect(page).toHaveURL(/search=COFFEE/)
   await expect(page.getByText('1–1 of 1 transactions')).toBeVisible()
-  await page.reload()
+  await reload(page)
   await expect(page.getByLabel('Description', { exact: true })).toHaveValue('COFFEE')
   await page.getByRole('button', { name: /Coffee purchase/ }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -153,7 +154,7 @@ test('an ambiguous payment can be kept separately before confirmation', async ({
 
 test('unlock a PDF, download locally and import the unlocked copy', async ({ page }, testInfo) => {
   const file = pdf()
-  await page.goto('/pdf-unlock')
+  await visit(page, '/pdf-unlock')
   await page.getByLabel('PDF to unlock').setInputFiles(file)
   await page.getByLabel('PDF password', { exact: true }).fill('wrong')
   await page.getByRole('button', { name: 'Unlock PDF', exact: true }).click()
@@ -174,7 +175,7 @@ test('unlock a PDF, download locally and import the unlocked copy', async ({ pag
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   await page.screenshot({ path: 'test-results/unlock-mobile.png', fullPage: true })
-  await page.goto('/transactions')
+  await visit(page, '/transactions')
   await expect(page.getByText('Your ledger starts here')).toBeVisible()
   await upload(page, { ...file, name: 'synthetic_unlocked.pdf', buffer: readFileSync(saved) }, '')
   await expect(page.getByRole('heading', { name: 'Review your statement' })).toBeVisible()
@@ -187,7 +188,7 @@ test('multiple PDFs continue after failure, retry individually, and review overl
   const second = { ...pdf({ memo: 'Overlapping selection' }), name: 'second.pdf' }
   const third = { ...pdf({ account: '222222222222', password: 'different-password' }), name: 'third.pdf' }
   const fourth = { ...pdf({ account: '333333333333' }), name: 'fourth.pdf' }
-  await page.goto('/imports/new')
+  await visit(page, '/imports/new')
   await page.getByLabel('PDF statement').setInputFiles([first, second, third, fourth])
   await page.getByLabel('PDF password', { exact: true }).fill('test-only-password')
   await page.getByLabel('Password for statement 3', { exact: true }).fill('wrong')
@@ -211,7 +212,7 @@ test('multiple PDFs continue after failure, retry individually, and review overl
   await page.getByRole('button', { name: 'Confirm import' }).click()
   await expect(page.getByRole('heading', { name: 'Statement imported' })).toBeVisible()
   await page.getByRole('link', { name: 'Back to statement uploads' }).click()
-  await page.reload()
+  await reload(page)
   await expect(page.locator('.recent-import')).toHaveCount(4)
   await page.getByRole('link').filter({ has: page.getByText('second.pdf', { exact: true }) }).click()
   await expect(page.locator('.badge-match')).toHaveCount(2)

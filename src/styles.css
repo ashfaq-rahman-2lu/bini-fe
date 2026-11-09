@@ -43,6 +43,16 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 a { color: inherit; text-decoration: none; }
 button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .app-shell { display: flex; min-height: 100vh; }
+.login-shell { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.login-card { width: 100%; max-width: 420px; padding: 32px; }
+.login-card .brand { padding: 0; margin-bottom: 38px; }
+.login-description { color: var(--text-secondary); font-size: 13px; line-height: 1.7; margin: 14px 0 26px; }
+.login-form { display: grid; gap: 20px; }
+.login-form input { width: 100%; font-size: 14px; }
+.login-form label > span { font-size: 12px; }
+.login-form .error-box { margin: 0; }
+.login-card .footnote { margin-bottom: 0; }
+.signout-button { margin-top: 18px; width: 100%; }
 .sidebar { width: 224px; flex-shrink: 0; padding: 35px 20px 22px; background: var(--sidebar-bg); border-right: 1px solid var(--border-soft); position: fixed; height: 100vh; display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 34px; font-weight: 750; letter-spacing: -1.6px; padding: 0 10px; }
 .brand-mark { background: var(--accent); color: var(--on-accent); padding: 8px; border-radius: 11px; display: flex; margin-right: 3px; }
@@ -785,6 +795,7 @@ select:not([multiple]):not([size]) {
 .mobile-nav-dialog::backdrop { background: #0008; }
 .mobile-nav-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-left: 8px; margin-bottom: 4px; }
 .mobile-nav-heading h2 { font-size: 11px; color: var(--text-muted); }
+.mobile-nav-heading .mobile-signout { min-height: 32px; padding: 5px 8px; margin-left: auto; font-size: 11px; }
 .mobile-nav-heading .icon-button { min-height: 32px; min-width: 32px; padding: 5px; justify-content: center; }
 .mobile-nav-dialog nav { display: grid; gap: 2px; }
 .mobile-nav-dialog nav a { justify-content: flex-start; padding: 7px 8px; font-size: 12px; gap: 8px; min-height: 38px; border: 1px solid transparent; }

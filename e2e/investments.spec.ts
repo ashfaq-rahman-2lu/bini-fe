@@ -1,3 +1,4 @@
+import { visit, reload, authenticatedApi } from './auth-helpers'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { test, expect } from '@playwright/test'
@@ -17,7 +18,7 @@ function importCsv(kind: 'extended_csv' | 'replacement_csv') {
 test('investment review, project gain, money traces and delayed bank matches', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message))
   run('from test_investments import seed_bank; seed_bank()')
-  await page.goto('/investments')
+  await visit(page, '/investments')
   await page.getByRole('link', { name: 'Import investment CSV' }).first().click()
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles(csv())
   await page.getByRole('button', { name: 'Preview investment import' }).click()
@@ -75,7 +76,7 @@ test('investment review, project gain, money traces and delayed bank matches', a
   await page.getByRole('button', { name: 'Save project' }).click()
   await expect(page.getByRole('region', { name: 'Investment profit and reconciliation' })).toContainText('100.00')
   await expect(page.getByText('10.00%')).toBeVisible()
-  await page.reload()
+  await reload(page)
   await expect(summary).not.toHaveAttribute('open')
   await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toHaveValue(/.+/)
   await summary.locator('summary').click()
@@ -90,7 +91,7 @@ test('investment review, project gain, money traces and delayed bank matches', a
 })
 
 test('cancel, retry malformed CSV and import an overlapping report', async ({ page }) => {
-  await page.goto('/investments/imports/new')
+  await visit(page, '/investments/imports/new')
   await expect(page.getByRole('combobox', { name: 'Import mode' })).toHaveValue('extend')
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles({ name: 'invalid.csv', mimeType: 'text/csv', buffer: Buffer.from('wrong headers') })
   await page.getByRole('button', { name: 'Preview investment import' }).click()
@@ -116,19 +117,19 @@ test('cancel, retry malformed CSV and import an overlapping report', async ({ pa
 
 test('replacement shows impact, requires acknowledgment, cancels safely and resets only investment data', async ({ page }) => {
   run('from test_investments import seed_bank; seed_bank()')
-  await page.goto('/investments/imports/new')
+  await visit(page, '/investments/imports/new')
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles(csv())
   await page.getByRole('button', { name: 'Preview investment import' }).click()
   await page.getByLabel('I reviewed the warnings').check()
   await page.getByRole('button', { name: 'Confirm investment import' }).click()
   await expect(page.getByRole('heading', { name: 'Investment report imported' })).toBeVisible()
-  const before = await (await page.request.get('/api/investments')).json()
-  const bank = await (await page.request.get('/api/transactions')).json()
+  const before = await (await authenticatedApi(page).get('/api/investments')).json()
+  const bank = await (await authenticatedApi(page).get('/api/transactions')).json()
   const funding = before.events.find((event: { kind: string }) => event.kind === 'investment')
   const repayment = before.events.find((event: { kind: string }) => event.kind === 'repayment')
   const debit = bank.items.find((transaction: { direction: string }) => transaction.direction === 'debit')
-  expect((await page.request.post('/api/investments/bank-links', { data: { event_id: funding.id, transaction_id: debit.id, amount: '1000' } })).status()).toBe(200)
-  expect((await page.request.patch(`/api/investments/events/${repayment.id}/split`, { data: { principal: '550' } })).status()).toBe(200)
+  expect((await authenticatedApi(page).post('/api/investments/bank-links', { data: { event_id: funding.id, transaction_id: debit.id, amount: '1000' } })).status()).toBe(200)
+  expect((await authenticatedApi(page).patch(`/api/investments/events/${repayment.id}/split`, { data: { principal: '550' } })).status()).toBe(200)
   await page.getByRole('link', { name: 'Back to investment imports' }).click()
   await page.getByRole('combobox', { name: 'Import mode' }).selectOption('replace')
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles(importCsv('replacement_csv'))
@@ -149,7 +150,7 @@ test('replacement shows impact, requires acknowledgment, cancels safely and rese
   await expect(page.getByLabel('I reviewed the warnings')).not.toBeChecked()
   await page.getByRole('button', { name: 'Cancel investment import' }).click()
   await expect(page.getByRole('combobox', { name: 'Import mode' })).toHaveValue('extend')
-  const cancelled = await (await page.request.get('/api/investments')).json()
+  const cancelled = await (await authenticatedApi(page).get('/api/investments')).json()
   expect(cancelled.events).toHaveLength(7); expect(cancelled.bank_links).toHaveLength(1)
   await page.getByRole('combobox', { name: 'Import mode' }).selectOption('replace')
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles(importCsv('replacement_csv'))
@@ -158,17 +159,17 @@ test('replacement shows impact, requires acknowledgment, cancels safely and rese
   await page.getByLabel('I understand this replaces all investment data').check()
   await page.getByRole('button', { name: 'Confirm investment import' }).click()
   await expect(page.getByRole('heading', { name: 'Investment report imported' })).toBeVisible()
-  const after = await (await page.request.get('/api/investments')).json()
+  const after = await (await authenticatedApi(page).get('/api/investments')).json()
   expect(after.events).toHaveLength(2); expect(after.projects).toHaveLength(1); expect(after.bank_links).toHaveLength(0)
   expect(after.events.every((event: { principal: string | null }) => event.principal === null)).toBeTruthy()
-  expect((await (await page.request.get('/api/transactions')).json()).total).toBe(bank.total)
+  expect((await (await authenticatedApi(page).get('/api/transactions')).json()).total).toBe(bank.total)
   await page.getByRole('link', { name: 'View investments' }).click()
   await expect(page.getByText('2 movements · BDT')).toBeVisible()
 })
 
 test('investment activity paginates repeated installments and preserves inclusive filters', async ({ page }) => {
   const buffer = Buffer.from(run("import base64; from test_investments import csv_fixture; entries=[('02-Jul-2025','Investment\\nBANK_TRANSFER for Alpha [1]','','1000','','','0','1000')]; entries += [('05-Jul-2025','Repayment Received\\npayment made by Alpha [1] to biniyog','','','','1',str(n),str(1000-n)) for n in range(1,70)]; print(base64.b64encode(csv_fixture(entries=entries)).decode())"), 'base64')
-  await page.goto('/investments/imports/new')
+  await visit(page, '/investments/imports/new')
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles({ name: 'repeated-installments.csv', mimeType: 'text/csv', buffer })
   await page.getByRole('button', { name: 'Preview investment import' }).click()
   await page.getByLabel('I reviewed the warnings').check()
@@ -185,7 +186,7 @@ test('investment activity paginates repeated installments and preserves inclusiv
   await page.getByRole('combobox', { name: 'Movement', exact: true }).selectOption('repayment')
   await page.getByRole('button', { name: 'Apply filters' }).click()
   await expect(page.getByText('69 movements · BDT')).toBeVisible()
-  await page.reload()
+  await reload(page)
   await page.getByRole('button', { name: /^Filters/ }).click()
   await expect(page.getByLabel('Description', { exact: true })).toHaveValue('alpha')
   await expect(page.getByText('69 movements · BDT')).toBeVisible()
@@ -196,7 +197,7 @@ test('investment activity paginates repeated installments and preserves inclusiv
 })
 
 test('compact investment preview keeps actions visible and preserves replacement consent', async ({ page }, testInfo) => {
-  await page.goto('/investments/imports/new')
+  await visit(page, '/investments/imports/new')
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles(csv())
   await page.getByRole('button', { name: 'Preview investment import', exact: true }).click()
   await page.getByLabel('I reviewed the warnings').check()
@@ -239,5 +240,5 @@ test('compact investment preview keeps actions visible and preserves replacement
   expect(await actions.evaluate(el => el.getBoundingClientRect().top)).toBeGreaterThanOrEqual(59)
   expect(await actions.evaluate(el => el.getBoundingClientRect().bottom)).toBeLessThan(350)
   await page.getByRole('button', { name: 'Cancel investment import', exact: true }).click()
-  expect((await (await page.request.get('/api/investments')).json()).events).toHaveLength(7)
+  expect((await (await authenticatedApi(page).get('/api/investments')).json()).events).toHaveLength(7)
 })

@@ -1,3 +1,4 @@
+import { visit, reload } from './auth-helpers'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { test, expect } from '@playwright/test'
@@ -17,7 +18,7 @@ seed_transfers([((date(2025, 9, 1)+timedelta(days=n)).isoformat(), 'credit' if n
 `], { env })
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message))
   await page.setViewportSize({ width: 1305, height: 800 })
-  await page.goto('/transactions')
+  await visit(page, '/transactions')
   await expect(page.getByRole('region', { name: 'Filtered totals' })).toContainText('55')
   await expect(page.locator('.ledger-table tbody tr')).toHaveCount(50)
   await expect(page.locator('.ledger-direction.debit').first()).toHaveText('Debit')
@@ -37,7 +38,7 @@ seed_transfers([((date(2025, 9, 1)+timedelta(days=n)).isoformat(), 'credit' if n
   await page.getByRole('button', { name: 'Remove type filter' }).click()
   await expect(page).toHaveURL(/sort=amount_asc/)
   await expect(page).not.toHaveURL(/direction=/)
-  await page.reload()
+  await reload(page)
   await expect(page.getByLabel('Description', { exact: true })).toHaveValue('Synthetic')
   await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
   await expect(page).toHaveURL(/sort=amount_asc/)
@@ -58,7 +59,7 @@ seed_transfers([((date(2025, 9, 1)+timedelta(days=n)).isoformat(), 'credit' if n
   await expect(page).toHaveURL(/from_date=2025-10-01/)
   await expect(page).toHaveURL(/sort=amount_asc/)
   await expect(page.getByRole('region', { name: 'Filtered totals' })).toContainText('1,390.00')
-  await page.reload()
+  await reload(page)
   await expect(page.getByRole('button', { name: 'SKB', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'EFT inflow', exact: true }).click()
   await expect(page.getByLabel('Description', { exact: true })).toHaveValue('eft inflow')
@@ -73,7 +74,7 @@ seed_transfers([((date(2025, 9, 1)+timedelta(days=n)).isoformat(), 'credit' if n
   await page.getByRole('button', { name: 'Close details' }).click()
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.screenshot({ path: testInfo.outputPath('ledger-mobile.png'), fullPage: true })
-  await page.goto('/investments')
+  await visit(page, '/investments')
   await page.setViewportSize({ width: 1305, height: 800 })
   await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toBeVisible()
   const buttons = await page.locator('.page-header .reconciliation-actions a').evaluateAll(elements => elements.map(e => ({ top: e.getBoundingClientRect().top, height: e.getBoundingClientRect().height })))

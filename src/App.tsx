@@ -6,6 +6,7 @@ import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type Sortin
 import { StatementUpload, UnlockPdf } from './PdfTools'
 import { Investments, InvestmentUpload, InvestmentReview, InvestmentReconciliation } from './Investments'
 import { CsvUpdate } from './CsvUpdater'
+import { useAuth } from './Auth'
 import { ReconciliationRetry, useReconcile } from './Reconciliation'
 import { api, ApiError, dateLabel, jsonRequest, money, type Account, type ImportReview, type Ledger, type ReviewRow, type Transaction, type TransactionDetail } from './api'
 
@@ -19,6 +20,7 @@ function Stat({ label, value, tone = '' }: { label: string; value: string; tone?
 }
 
 export default function App() {
+  const { username, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
   useEffect(() => { setMenuOpen(false) }, [location.key])
@@ -30,7 +32,7 @@ export default function App() {
       <nav aria-label="Main navigation">
         <NavigationLinks />
       </nav>
-      <div className="sidebar-bottom"><span className="small-dot" /> Local workspace<div>EBL statements · BDT</div></div>
+      <div className="sidebar-bottom"><span className="small-dot" /> {username}<div>EBL statements · BDT</div><button className="secondary-button signout-button" onClick={signOut}>Sign out</button></div>
     </aside>
     {menuOpen && <MobileNavigation close={() => setMenuOpen(false)} />}
     <main className="main-area"><Routes>
@@ -60,6 +62,7 @@ function NavigationLinks() {
 }
 
 function MobileNavigation({ close }: { close: () => void }) {
+  const { signOut } = useAuth()
   const ref = useRef<HTMLDialogElement>(null)
   const closeRef = useRef(close)
   closeRef.current = close
@@ -75,7 +78,7 @@ function MobileNavigation({ close }: { close: () => void }) {
     return () => { desktop.removeEventListener('change', resize); document.body.style.overflow = overflow; dialog.close(); opener?.focus() }
   }, [])
   return <dialog ref={ref} id="mobile-navigation" className="mobile-nav-dialog" aria-labelledby="mobile-navigation-title" onCancel={e => { e.preventDefault(); close() }} onClose={() => { if (!ref.current?.open) close() }} onClick={e => { if (e.target === e.currentTarget) close() }}>
-    <div className="mobile-nav-heading"><h2 id="mobile-navigation-title">Navigation</h2><button className="icon-button" aria-label="Close navigation" onClick={close}><X size={20} /></button></div>
+    <div className="mobile-nav-heading"><h2 id="mobile-navigation-title">Navigation</h2><button className="secondary-button mobile-signout" onClick={signOut}>Sign out</button><button className="icon-button" aria-label="Close navigation" onClick={close}><X size={20} /></button></div>
     <nav aria-label="Mobile navigation" onClick={e => { if ((e.target as Element).closest('a')) close() }}><NavigationLinks /></nav>
   </dialog>
 }
