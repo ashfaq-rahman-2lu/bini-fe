@@ -96,3 +96,28 @@ Tests launch API/frontend servers on ports 8001/5174 and stop them afterwards. S
 ## Version control
 
 Commit source, configuration, `.nvmrc`, package/lockfiles, browser tests, and `.env.example`. The frontend `.gitignore` independently excludes dependencies, builds, TypeScript metadata, test output, coverage, logs, and local environment files. This repository contains no database infrastructure or private bank statement fixtures.
+
+
+## Investment money trails
+
+The backend must be migrated through `0005` before using reconciliation. Select a project with the existing filters to open **Money flow** by default. The overview connects invested funds → installments returned to the wallet → cashouts, reinvestments and confirmed available funds. These are all-time project totals. The installment timeline follows the movement, description and date filters, includes directly linked context, and shows each return's destinations and its share of combined payouts. Unverified wallet funds remain marked for review. Use **Show more installments** to reveal history beyond the first 20.
+
+Funding rows distinguish bank posting dates from investment booking dates. **View installment**, **View payout** and **View reinvestment** open the existing movement details; destination investment links open that project's direct flow. Expand **Bank transactions** for full descriptions, bank amounts, project shares and separate BUSINESS DATE evidence. Bank evidence and **Investment summary** start collapsed. Switch to **Activity table** to inspect every movement, including reserved and consumed credit amounts and settlement rows; the selected view and filters survive reload through the URL. Without a selected project, the activity table remains the default.
+
+Open **Money reconciliation** from the Investments page header to visit `/investments/reconciliation`. The matching controls, review queue and saved explanations live on this separate page. **Back to investments** preserves the project and activity filters, including after a reload. Movement details remain available directly from the review queue.
+
+**Reconcile now** saves uniquely resolved wallet/bank matches. The collapsible review queue distinguishes wallet attribution from bank matching, exposes preserved conflicting links, and supports source-credit selection, settlement grouping and an earlier-instruction/later-booking explanation. Saved review explanations remain visible after reload. Use movement details for manual wider-date or split bank matches. Related bank links open the existing transaction/source dialog.
+
+After CSV or bank-statement confirmation, a separate reconciliation request runs. A failed request does not undo the import; use **Retry reconciliation**. No polling or GET mutations were added. Extend retains reviewed decisions; replace previews the reconciliation records it will remove. Existing manual links stay intact until explicitly removed.
+
+`e2e/reconciliation.spec.ts` covers automatic Apon matching, flow totals and installment destinations, flow/table switching, project filters, collapsed bank evidence, bank details, mobile width, collapsed summary, delayed-booking resolution/reload, and import-success/reconciliation-failure retry. It uses synthetic fixtures and the existing separate PostgreSQL test database and temporary test servers.
+
+Investment flow uses compact installment rows and status chips. Movement dialogs keep fully matched editing tools and source text collapsed. The selected project's **Mark completed** action confirms final repayments and checks that every return has a destination with no available/reserved wallet funds. It does not clear money or add adjustments. Use **Reopen investment** before adding further activity. The summary's existing close action remains available for final settlement when wallet returns are still being managed.
+
+The investment toolbar keeps only Project and a Filters button. Project selection applies immediately. Movement, description and dates are edited in a modal; Apply filters saves them to the URL, Cancel discards edits, and Clear filters preserves the selected project and view. A badge counts active extra filters.
+
+Project selection, Filters, status and completion share a compact toolbar (wrapping on phones). Destination totals use one row on wider screens. Profit is shown separately: saved installment profit for active projects, with unclassified amounts identified, and final returns-minus-invested gain/loss for closed projects. Profit is already included in returns and is not another destination.
+
+Reconciliation opens its review queue with action-based titles, project/date/type chips and separate Wallet/Bank statuses. Each item explains the next action; the original diagnostic is available under “Why this needs review.” Source-credit checkboxes show available amounts in aligned rows, with selected/needed totals and the remaining difference. The queue covers all projects because an earlier wallet issue can block later ones.
+
+Small wallet differences: source-credit reviews offer explicit acceptance for differences up to BDT 5.00. The chip shows the exact amount and direction (`1.00 BDT difference · over`), adding `Accepted` after saving. Source-selection changes reset consent. Larger differences stay blocked. Accepted differences and their cumulative absolute total remain visible on the reconciliation page; payment details and direct project trails retain the chip after reload. Source amounts on affected trails are labeled as credits committed before settlement differences, rather than exact net investment/bank shares. CSV, bank and profit amounts are unchanged.

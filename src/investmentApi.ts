@@ -1,15 +1,16 @@
+export interface SettlementDifference { event_id: string; case_id: string; amount: string; source_ids: string[]; explanation: string; reviewed_at: string }
 export interface InvestmentProject {
   id: string; institution_id: string; name: string; status: 'active' | 'closed'; expected_total: string | null;
   invested: string; returned: string; external_funding: string; reinvestment_funding: string;
   classified_profit: string; principal_returned: string; unclassified_returns: string; principal_outstanding: string | null; capital_written_off: string | null;
   net_recovery: string; final_gain: string | null; roi_percent: string | null; expected_remaining: string | null;
-  traced_to_bank_payout: string; traced_to_reinvestment: string; untraced_returns: string;
+  has_settlement_difference?: boolean; traced_to_bank_payout: string; traced_to_reinvestment: string; untraced_returns: string;
 }
 export interface InvestmentEvent {
   id: string; institution_id: string; project_id: string | null; posting_date: string;
   kind: 'investment' | 'reinvestment' | 'repayment' | 'refund' | 'cashout' | 'reinvestment_settlement';
   amount: string; description: string; principal: string | null; profit: string | null; reported_profit: string | null;
-  ready_balance: string; reported_capital: string; allocated_out: string; allocated_in: string; bank_linked: string;
+  difference?: SettlementDifference | null; ready_balance: string; reported_capital: string; allocated_out: string; allocated_in: string; bank_linked: string;
   sources: { import_id: string; filename: string; ordinal: number }[];
 }
 export interface InvestmentWorkspace {
@@ -20,7 +21,7 @@ export interface InvestmentWorkspace {
 export interface InvestmentDraft {
   id: string; institution: string; filename: string; status: 'draft' | 'confirmed'; revision: number;
   mode: 'extend' | 'replace';
-  replacement: { events: number; projects: number; imports: number; principal_splits: number; allocations: number; bank_links: number } | null;
+  replacement: { events: number; projects: number; imports: number; principal_splits: number; allocations: number; bank_links: number; reconciliation_cases: number; reinvestment_associations: number } | null;
   rows: { ordinal: number; posting_date: string; kind: string; amount: string; description: string; project: string | null; existing_id: string | null }[];
   warnings: string[]; summary: Record<string, string>; opening_wallet: string; closing_wallet: string; new_count: number; linked_count: number;
 }
