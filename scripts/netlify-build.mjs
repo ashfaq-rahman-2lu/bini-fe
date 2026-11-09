@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 
 // Netlify's redirect configuration does not interpolate environment variables.
-const configurationError = 'Set BACKEND_URL to the HTTPS origin of your Render backend, without /api or credentials.'
+const configurationError = 'Set BACKEND_URL to the HTTPS origin of your Railway backend, without /api or credentials.'
 let backend
 try { backend = new URL(process.env.BACKEND_URL || '') }
 catch { throw new Error(configurationError) }
