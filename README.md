@@ -21,9 +21,36 @@ FastAPI runs independently, normally at http://127.0.0.1:8000. Vite proxies `/ap
 API_PROXY_TARGET=http://127.0.0.1:8002 npm run dev
 ```
 
-`VITE_API_BASE_URL` defaults to `/api`. Copy `.env.example` to `.env.local` only when overriding it. For separate hosting, configure this public build-time value with the API base URL (including `/api`) and configure the backend's allowed origins. Never put database credentials or private keys in frontend variables or bundles.
+`VITE_API_BASE_URL` defaults to `/api`. Copy `.env.example` to `.env.local` only when overriding it. Cookie authentication needs a same-origin proxy or same-site HTTPS custom domains; use the deployment setup below. Never put database credentials or private keys in frontend variables or bundles.
 
-Normal frontend development/building requires Node.js and an accessible API; it does not require Python, PostgreSQL, or backend source in this checkout. This release is local-only; public hosting follows the authentication milestone.
+Normal frontend development/building requires Node.js and an accessible API; it does not require Python, PostgreSQL, or backend source in this checkout. Set the single account's credentials on the backend before signing in. The frontend has no credential environment variables.
+
+## Single-account sign in
+
+Sign in with the backend's configured `AUTH_USERNAME` and `AUTH_PASSWORD`. There is no registration or per-user ledger. Login sets an eight-hour HttpOnly cookie; the browser sends it automatically, and JavaScript cannot read it. Refreshing or opening another tab keeps you signed in until expiry. No credentials or session tokens are stored in localStorage/sessionStorage. The requested route and query string are preserved through login.
+
+Desktop navigation and the mobile menu provide **Sign out**, which deletes the cookie on the server response and clears the frontend cache. If that request fails, the app shows an error and keeps the session so you can retry. Expiry is enforced by the backend; the next rejected API request or page refresh returns to login. A separately copied cookie remains valid until expiry or backend credential/secret rotation.
+
+## Deploy with Netlify and Render
+
+These steps connect an existing Render API (using your Supabase database) to Netlify. Authentication needs no database migration or Supabase Auth setup.
+
+1. In the Render backend environment, set `AUTH_USERNAME`, `AUTH_PASSWORD`, a random `AUTH_SECRET` of at least 32 characters, and `AUTH_COOKIE_SECURE=true`. Keep your existing Supabase `DATABASE_URL` on Render only.
+2. Import the frontend Git repository into Netlify. Its repository root contains `netlify.toml`; keep the configured build command `node scripts/netlify-build.mjs` and publish directory `dist`. If importing the parent workspace instead, set the base directory to `frontend`.
+3. Add a Netlify build environment variable `BACKEND_URL=https://your-backend.onrender.com` (replace the hostname; do not append `/api`). The script builds with `VITE_API_BASE_URL=/api` and generates API proxy and SPA fallback rules. It does not need any password, signing secret, or database variable.
+4. In Render, set `ALLOWED_ORIGINS` to the exact Netlify site origin as a JSON array, for example `["https://your-site.netlify.app"]`, then redeploy the backend. Add your custom frontend origin if you later use one. Do not use `*`.
+5. Deploy Netlify, open its HTTPS URL, sign in, refresh to confirm the session persists, then sign out and refresh to confirm the workspace stays locked. Check an upload and a protected deep link as well.
+
+The browser calls its own site's `/api`; Netlify forwards requests and cookies to Render. All API responses are marked `no-store`. Avoid setting the frontend directly to an `onrender.com` API URL from a `netlify.app` site: those domains are cross-site and the Lax session cookie will not work.
+
+**Long uploads:** Netlify's proxy has a [26-second timeout](https://docs.netlify.com/manage/routing/redirects/rewrites-proxies/), while PDF processing can take up to 60 seconds. A timeout does not cancel backend work; check Recent imports before retrying. For longer requests, use HTTPS custom domains on the same site, such as `app.example.com` on Netlify and `api.example.com` on Render. To call that API directly, change `netlify.toml`'s build command to `npm run build`, add the SPA fallback below, set Netlify's `VITE_API_BASE_URL=https://api.example.com/api`, and set Render's `ALLOWED_ORIGINS=["https://app.example.com"]`. Keep `AUTH_COOKIE_SECURE=true` and access the frontend via its custom domain. This bypasses Netlify's API proxy; `BACKEND_URL` is then unused.
+
+```toml
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+```
 
 ## Unlock PDFs and import multiple statements
 
@@ -96,3 +123,28 @@ Tests launch API/frontend servers on ports 8001/5174 and stop them afterwards. S
 ## Version control
 
 Commit source, configuration, `.nvmrc`, package/lockfiles, browser tests, and `.env.example`. The frontend `.gitignore` independently excludes dependencies, builds, TypeScript metadata, test output, coverage, logs, and local environment files. This repository contains no database infrastructure or private bank statement fixtures.
+
+
+## Investment money trails
+
+The backend must be migrated through `0005` before using reconciliation. Select a project with the existing filters to open **Money flow** by default. The overview connects invested funds → installments returned to the wallet → cashouts, reinvestments and confirmed available funds. These are all-time project totals. The installment timeline follows the movement, description and date filters, includes directly linked context, and shows each return's destinations and its share of combined payouts. Unverified wallet funds remain marked for review. Use **Show more installments** to reveal history beyond the first 20.
+
+Funding rows distinguish bank posting dates from investment booking dates. **View installment**, **View payout** and **View reinvestment** open the existing movement details; destination investment links open that project's direct flow. Expand **Bank transactions** for full descriptions, bank amounts, project shares and separate BUSINESS DATE evidence. Bank evidence and **Investment summary** start collapsed. Switch to **Activity table** to inspect every movement, including reserved and consumed credit amounts and settlement rows; the selected view and filters survive reload through the URL. Without a selected project, the activity table remains the default.
+
+Open **Money reconciliation** from the Investments page header to visit `/investments/reconciliation`. The matching controls, review queue and saved explanations live on this separate page. **Back to investments** preserves the project and activity filters, including after a reload. Movement details remain available directly from the review queue.
+
+**Reconcile now** saves uniquely resolved wallet/bank matches. The collapsible review queue distinguishes wallet attribution from bank matching, exposes preserved conflicting links, and supports source-credit selection, settlement grouping and an earlier-instruction/later-booking explanation. Saved review explanations remain visible after reload. Use movement details for manual wider-date or split bank matches. Related bank links open the existing transaction/source dialog.
+
+After CSV or bank-statement confirmation, a separate reconciliation request runs. A failed request does not undo the import; use **Retry reconciliation**. No polling or GET mutations were added. Extend retains reviewed decisions; replace previews the reconciliation records it will remove. Existing manual links stay intact until explicitly removed.
+
+`e2e/reconciliation.spec.ts` covers automatic Apon matching, flow totals and installment destinations, flow/table switching, project filters, collapsed bank evidence, bank details, mobile width, collapsed summary, delayed-booking resolution/reload, and import-success/reconciliation-failure retry. It uses synthetic fixtures and the existing separate PostgreSQL test database and temporary test servers.
+
+Investment flow uses compact installment rows and status chips. Movement dialogs keep fully matched editing tools and source text collapsed. The selected project's **Mark completed** action confirms final repayments and checks that every return has a destination with no available/reserved wallet funds. It does not clear money or add adjustments. Use **Reopen investment** before adding further activity. The summary's existing close action remains available for final settlement when wallet returns are still being managed.
+
+The investment toolbar keeps only Project and a Filters button. Project selection applies immediately. Movement, description and dates are edited in a modal; Apply filters saves them to the URL, Cancel discards edits, and Clear filters preserves the selected project and view. A badge counts active extra filters.
+
+Project selection, Filters, status and completion share a compact toolbar (wrapping on phones). Destination totals use one row on wider screens. Profit is shown separately: saved installment profit for active projects, with unclassified amounts identified, and final returns-minus-invested gain/loss for closed projects. Profit is already included in returns and is not another destination.
+
+Reconciliation opens its review queue with action-based titles, project/date/type chips and separate Wallet/Bank statuses. Each item explains the next action; the original diagnostic is available under “Why this needs review.” Source-credit checkboxes show available amounts in aligned rows, with selected/needed totals and the remaining difference. The queue covers all projects because an earlier wallet issue can block later ones.
+
+Small wallet differences: source-credit reviews offer explicit acceptance for differences up to BDT 5.00. The chip shows the exact amount and direction (`1.00 BDT difference · over`), adding `Accepted` after saving. Source-selection changes reset consent. Larger differences stay blocked. Accepted differences and their cumulative absolute total remain visible on the reconciliation page; payment details and direct project trails retain the chip after reload. Source amounts on affected trails are labeled as credits committed before settlement differences, rather than exact net investment/bank shares. CSV, bank and profit amounts are unchanged.

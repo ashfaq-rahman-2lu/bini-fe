@@ -1,0 +1,82 @@
+import { test, expect } from '@playwright/test'
+import { signIn } from './auth-helpers'
+
+test('login protects deep links, rejects bad credentials and keeps secrets out of browser storage', async ({ page }) => {
+  const dataRequests: string[] = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/transactions') dataRequests.push(request.headers().authorization || '')
+  })
+  await page.goto('/transactions?search=synthetic')
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+  await expect(page.locator('.app-shell')).toHaveCount(0)
+  expect(dataRequests).toEqual([])
+  expect((await page.request.get('/api/transactions')).status()).toBe(401)
+  expect((await page.request.post('/api/pdfs/unlock')).status()).toBe(401)
+  await page.getByLabel('Username', { exact: true }).fill('test-user')
+  await page.getByLabel('Password', { exact: true }).fill('incorrect')
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Incorrect username or password.')
+  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('')
+  await signIn(page)
+  await expect(page.getByRole('heading', { name: 'Transactions', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/transactions\?search=synthetic$/)
+  await expect(page.getByRole('button', { name: 'Apply filters' })).toBeVisible()
+  expect(dataRequests.length).toBeGreaterThan(0)
+  expect(dataRequests.every(header => header === '')).toBeTruthy()
+  expect(await page.evaluate(() => document.cookie)).not.toContain('bini_session')
+  const cookie = (await page.context().cookies()).find(cookie => cookie.name === 'bini_session')!
+  expect(cookie.httpOnly).toBeTruthy()
+  expect(cookie.sameSite).toBe('Lax')
+  expect(cookie.expires - Date.now() / 1000).toBeGreaterThan(28700)
+  expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length }))).toEqual({ local: 0, session: 0 })
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+  await expect(page.locator('.app-shell')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+  await signIn(page)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Transactions', exact: true })).toBeVisible()
+  const otherTab = await page.context().newPage()
+  await otherTab.goto('/transactions')
+  await expect(otherTab.locator('.app-shell')).toBeVisible()
+  await otherTab.close()
+})
+
+test('an expired or rejected session returns to login', async ({ page }) => {
+  await page.goto('/investments')
+  await signIn(page)
+  await page.route('**/api/transactions?*', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Sign in to continue.' }) }))
+  await page.getByRole('link', { name: 'Transactions', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+  await expect(page.locator('.app-shell')).toHaveCount(0)
+})
+
+test('mobile login and sign out work without horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/transactions')
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
+  await signIn(page)
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.getByRole('dialog', { name: 'Navigation', exact: true }).getByRole('button', { name: 'Sign out', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden')
+})
+
+test('missing cookie after expiry returns to login on refresh', async ({ page }) => {
+  await page.goto('/transactions')
+  await signIn(page)
+  await page.context().clearCookies()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+})
+
+test('logout failure retains the session and offers retry', async ({ page }) => {
+  await page.goto('/transactions')
+  await signIn(page)
+  await page.route('**/api/auth/logout', route => route.fulfill({ status: 503 }))
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Unable to sign out')
+  await expect(page.locator('.app-shell')).toBeVisible()
+})

@@ -1,3 +1,4 @@
+import { visit } from './auth-helpers'
 import { readFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { csvColumns, csvRow, parseCsvRecords } from '../src/csvUpdate'
@@ -17,9 +18,9 @@ const file = (name: string, text: string) => ({ name, mimeType: 'text/csv', buff
 
 test('preserves corrections, automatically downloads appended rows, repeats safely and works on mobile without uploading files', async ({ page }, info) => {
   const requests: string[] = [], errors: string[] = []
-  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) requests.push(request.url()) })
+  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/') && !new URL(request.url()).pathname.startsWith('/api/auth/')) requests.push(request.url()) })
   page.on('pageerror', error => errors.push(error.message))
-  await page.goto('/csv-update')
+  await visit(page, '/csv-update')
   await expect(page.getByRole('heading', { name: 'Update a fixed CSV' })).toBeVisible()
   await expect(page.getByRole('checkbox')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Update and download CSV' })).toBeDisabled()
@@ -83,7 +84,7 @@ test('preserves corrections, automatically downloads appended rows, repeats safe
 test('rejects malformed, mismatched-investor and invalid-UTF8 files without downloading', async ({ page }) => {
   let downloads = 0
   page.on('download', () => downloads++)
-  await page.goto('/csv-update')
+  await visit(page, '/csv-update')
   await page.getByLabel('Fixed CSV', { exact: true }).setInputFiles(file('fixed.csv', report(false)))
   await page.getByLabel('Latest downloaded CSV').setInputFiles(file('bad.csv', 'wrong headers'))
   await page.getByRole('button', { name: 'Update and download CSV' }).click()

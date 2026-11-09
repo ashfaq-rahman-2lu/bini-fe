@@ -29,7 +29,10 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message) }
 }
 async function request(path: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(base + path, init)
+  const headers = new Headers(init?.headers)
+  if (!['GET', 'HEAD'].includes((init?.method || 'GET').toUpperCase())) headers.set('X-Bini-Request', '1')
+  const response = await fetch(base + path, { ...init, headers, credentials: 'include', cache: 'no-store' })
+  if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('bini-session-expired'))
   if (!response.ok) {
     let message = `Request failed (${response.status}).`
     try {
