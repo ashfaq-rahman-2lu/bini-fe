@@ -31,19 +31,19 @@ Sign in with the backend's configured `AUTH_USERNAME` and `AUTH_PASSWORD`. There
 
 Desktop navigation and the mobile menu provide **Sign out**, which deletes the cookie on the server response and clears the frontend cache. If that request fails, the app shows an error and keeps the session so you can retry. Expiry is enforced by the backend; the next rejected API request or page refresh returns to login. A separately copied cookie remains valid until expiry or backend credential/secret rotation.
 
-## Deploy with Netlify and Render
+## Deploy with Netlify and Railway
 
-These steps connect an existing Render API (using your Supabase database) to Netlify. Authentication needs no database migration or Supabase Auth setup.
+These steps connect an existing Railway API (using your Supabase database) to Netlify. Authentication needs no database migration or Supabase Auth setup.
 
-1. In the Render backend environment, set `AUTH_USERNAME`, `AUTH_PASSWORD`, a random `AUTH_SECRET` of at least 32 characters, and `AUTH_COOKIE_SECURE=true`. Keep your existing Supabase `DATABASE_URL` on Render only.
+1. In the Railway backend environment, set `AUTH_USERNAME`, `AUTH_PASSWORD`, a random `AUTH_SECRET` of at least 32 characters, and `AUTH_COOKIE_SECURE=true`. Keep your existing Supabase `DATABASE_URL` on Railway only.
 2. Import the frontend Git repository into Netlify. Its repository root contains `netlify.toml`; keep the configured build command `node scripts/netlify-build.mjs` and publish directory `dist`. If importing the parent workspace instead, set the base directory to `frontend`.
-3. Add a Netlify build environment variable `BACKEND_URL=https://your-backend.onrender.com` (replace the hostname; do not append `/api`). The script builds with `VITE_API_BASE_URL=/api` and generates API proxy and SPA fallback rules. It does not need any password, signing secret, or database variable.
-4. In Render, set `ALLOWED_ORIGINS` to the exact Netlify site origin as a JSON array, for example `["https://your-site.netlify.app"]`, then redeploy the backend. Add your custom frontend origin if you later use one. Do not use `*`.
+3. Add a Netlify build environment variable `BACKEND_URL=https://your-backend.up.railway.app` (replace the hostname; do not append `/api`). The script builds with `VITE_API_BASE_URL=/api` and generates API proxy and SPA fallback rules. It does not need any password, signing secret, or database variable.
+4. In Railway, set `ALLOWED_ORIGINS` to the exact Netlify site origin as a JSON array, for example `["https://your-site.netlify.app"]`, then redeploy the backend. Add your custom frontend origin if you later use one. Do not use `*`.
 5. Deploy Netlify, open its HTTPS URL, sign in, refresh to confirm the session persists, then sign out and refresh to confirm the workspace stays locked. Check an upload and a protected deep link as well.
 
-The browser calls its own site's `/api`; Netlify forwards requests and cookies to Render. All API responses are marked `no-store`. Avoid setting the frontend directly to an `onrender.com` API URL from a `netlify.app` site: those domains are cross-site and the Lax session cookie will not work.
+The browser calls its own site's `/api`; Netlify forwards requests and cookies to Railway. All API responses are marked `no-store`. Avoid setting the frontend directly to an `up.railway.app` API URL from a `netlify.app` site: those domains are cross-site and the Lax session cookie will not work.
 
-**Long uploads:** Netlify's proxy has a [26-second timeout](https://docs.netlify.com/manage/routing/redirects/rewrites-proxies/), while PDF processing can take up to 60 seconds. A timeout does not cancel backend work; check Recent imports before retrying. For longer requests, use HTTPS custom domains on the same site, such as `app.example.com` on Netlify and `api.example.com` on Render. To call that API directly, change `netlify.toml`'s build command to `npm run build`, add the SPA fallback below, set Netlify's `VITE_API_BASE_URL=https://api.example.com/api`, and set Render's `ALLOWED_ORIGINS=["https://app.example.com"]`. Keep `AUTH_COOKIE_SECURE=true` and access the frontend via its custom domain. This bypasses Netlify's API proxy; `BACKEND_URL` is then unused.
+**Long uploads:** Netlify's proxy has a [26-second timeout](https://docs.netlify.com/manage/routing/redirects/rewrites-proxies/), while PDF processing can take up to 60 seconds. A timeout does not cancel backend work; check Recent imports before retrying. For longer requests, use HTTPS custom domains on the same site, such as `app.example.com` on Netlify and `api.example.com` on Railway. To call that API directly, change `netlify.toml`'s build command to `npm run build`, add the SPA fallback below, set Netlify's `VITE_API_BASE_URL=https://api.example.com/api`, and set Railway's `ALLOWED_ORIGINS=["https://app.example.com"]`. Keep `AUTH_COOKIE_SECURE=true` and access the frontend via its custom domain. This bypasses Netlify's API proxy; `BACKEND_URL` is then unused.
 
 ```toml
 [[redirects]]
