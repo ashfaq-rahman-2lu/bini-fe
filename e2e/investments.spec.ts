@@ -7,7 +7,7 @@ const backend = path.resolve(process.env.BACKEND_DIR || '../backend')
 const python = path.join(backend, '.venv/bin/python')
 const env = { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql+psycopg://bini:bini_local_only@127.0.0.1:55433/bini_test', PYTHONPATH: backend + path.delimiter + path.join(backend, 'tests'), PYTHONDONTWRITEBYTECODE: '1' }
 function run(program: string) { return execFileSync(python, ['-c', program], { env }).toString().trim() }
-test.beforeEach(() => run("from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"))
+test.beforeEach(() => run("from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE operation_jobs, investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"))
 function csv(prefix = 'Synthetic investor') {
   return { name: 'synthetic-investments.csv', mimeType: 'text/csv', buffer: Buffer.from(run(`import base64; from test_investments import csv_fixture; print(base64.b64encode(csv_fixture(prefix=${JSON.stringify(prefix)})).decode())`), 'base64') }
 }

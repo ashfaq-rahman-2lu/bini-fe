@@ -7,6 +7,7 @@ import { StatementUpload, UnlockPdf } from './PdfTools'
 import { Investments, InvestmentUpload, InvestmentReview, InvestmentReconciliation } from './Investments'
 import { CsvUpdate } from './CsvUpdater'
 import { useAuth } from './Auth'
+import { useQueuedOperation } from './operations'
 import { ReconciliationRetry, useReconcile } from './Reconciliation'
 import { api, ApiError, dateLabel, jsonRequest, money, type Account, type ImportReview, type Ledger, type ReviewRow, type Transaction, type TransactionDetail } from './api'
 
@@ -200,10 +201,11 @@ function Review() {
   const query = useQuery({ queryKey: ['import', id], queryFn: () => api<ImportReview>('/imports/' + id) })
   const data = query.data
   const decision = useMutation({ mutationFn: ({ row, value }: { row: ReviewRow; value: string }) => api<ImportReview>('/imports/' + id + '/decisions', jsonRequest('PATCH', { decisions: [{ row_id: row.id, decision: value === 'auto' ? null : value === 'new' ? 'new' : 'match', transaction_id: ['auto', 'new'].includes(value) ? null : value }] })), onSuccess: result => client.setQueryData(['import', id], result) })
-  const confirm = useMutation({ mutationFn: () => api<ImportReview>('/imports/' + id + '/confirm', jsonRequest('POST', { expected_revision: data!.revision })), onSuccess: result => {
+  const confirm = useQueuedOperation<ImportReview>({ kind: 'bank_confirm', target: id, parameters: () => ({ expected_revision: data!.revision }), onSuccess: result => {
     client.setQueryData(['import', id], result); client.invalidateQueries({ queryKey: ['transactions'] }); client.invalidateQueries({ queryKey: ['accounts'] }); client.invalidateQueries({ queryKey: ['transaction'] }); client.invalidateQueries({ queryKey: ['imports'] })
-    reconciliation.mutate()
-  }, onError: error => { if (error instanceof ApiError && error.status === 409) query.refetch() } })
+    if (result.reconciliation_job_id) reconciliation.resume(result.reconciliation_job_id)
+    else reconciliation.mutate()
+  }, onRecovered: () => { void query.refetch() }, onError: error => { if (error instanceof ApiError && error.status === 409) query.refetch() } })
   const cancel = useMutation({ mutationFn: () => api<void>('/imports/' + id, { method: 'DELETE' }), onSuccess: () => { client.removeQueries({ queryKey: ['import', id] }); client.invalidateQueries({ queryKey: ['imports'] }); navigate('/imports/new') } })
   const busy = decision.isPending || confirm.isPending || cancel.isPending
   if (query.isPending) return <Loading />
@@ -218,6 +220,7 @@ function Review() {
       <div className="statement-readiness" role="status"><strong>{!valid ? 'Financial checks need attention' : data.summary.unresolved ? `${data.summary.unresolved} duplicate ${data.summary.unresolved === 1 ? 'decision' : 'decisions'} to review` : 'Ready to import'}</strong><span>{!valid ? 'Resolve the failed checks before importing.' : data.summary.unresolved ? 'Choose whether to link or keep the flagged transactions.' : `${data.summary.new} new transactions · ${data.summary.duplicate} existing transactions to link`}</span></div>
       <div className="statement-action-buttons"><button className="secondary-button" disabled={busy} onClick={() => cancel.mutate()}>Cancel import</button><button className="primary-button" disabled={busy || !data.can_confirm} onClick={() => confirm.mutate()}>{confirm.isPending ? <LoaderCircle size={17} className="animate-spin" /> : <Check size={17} />} Confirm import</button></div>
     </div>}
+    {confirm.isPending && <p className="loading" role="status">Saving your import… You can refresh this page; progress is saved.</p>}
     <ErrorBox error={decision.error || confirm.error || cancel.error} />
     <ReconciliationRetry error={reconciliation.error} retry={() => reconciliation.mutate()} busy={reconciliation.isPending} />
     {data.status === 'confirmed' && <div className="success-banner"><CheckCircle2 size={21} /><div><strong>Your ledger is up to date.</strong><span>{data.summary.new} new transactions added · {data.summary.duplicate} existing transactions linked</span></div><Link className="secondary-button" to="/transactions">View transactions <ArrowRight size={16} /></Link></div>}

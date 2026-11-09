@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, dateLabel, jsonRequest, money } from './api'
 import { cents, decimal, kindLabel, remaining, sumMoney, type SettlementDifference, type InvestmentEvent, type InvestmentWorkspace } from './investmentApi'
+import { useQueuedOperation } from './operations'
 import { reconciliationChanges, type MovementChange, type MovementStatus } from './reconciliationChanges'
 
 export interface WalletCredit { available: string | null; reserved: string; consumed: string }
@@ -41,10 +42,23 @@ export const trailQuery = (id: string) => ({ queryKey: ['investments', 'trail', 
 type ReconciliationResult = (before: Reconciliation | undefined, after: Reconciliation) => void
 export function useReconcile(onResult?: ReconciliationResult) {
   const client = useQueryClient()
-  return useMutation({ mutationFn: () => api<Reconciliation>('/investments/reconciliation/run', { method: 'POST' }), onMutate: () => client.getQueryData<Reconciliation>(['investments', 'reconciliation']), onSuccess: async (result, _variables, before) => {
-    onResult?.(before, result)
-    await Promise.all([client.invalidateQueries({ queryKey: ['investments'] }), client.invalidateQueries({ queryKey: ['investment-review'] }), client.invalidateQueries({ queryKey: ['investment-bank'] })])
-  } })
+  return useQueuedOperation<Reconciliation, Reconciliation | undefined>({ kind: 'reconcile',
+    onMutate: () => client.getQueryData<Reconciliation>(['investments', 'reconciliation']),
+    onSuccess: async (result, before) => {
+      onResult?.(before, result)
+      // Mark all dependent views stale once, then install the returned snapshot.
+      // Refetch active views except reconciliation, whose result is already here.
+      await client.cancelQueries({ queryKey: ['investments', 'reconciliation'] })
+      await client.invalidateQueries({ queryKey: ['investments'], refetchType: 'none' })
+      client.setQueryData(['investments', 'reconciliation'], result)
+      await Promise.all([
+        client.refetchQueries({ predicate: q => q.queryKey[0] === 'investments' && q.queryKey[1] !== 'reconciliation', type: 'active' }),
+        client.invalidateQueries({ queryKey: ['investment-review'], refetchType: 'none' }),
+        client.invalidateQueries({ queryKey: ['investment-bank'] }),
+      ])
+    },
+    onRecovered: () => { void client.invalidateQueries({ queryKey: ['investments', 'reconciliation'] }) },
+  })
 }
 export function ReconciliationRetry({ error, retry, busy }: { error: unknown; retry: () => void; busy: boolean }) {
   return error ? <div className="error-box" role="alert">Import saved. Reconciliation could not finish: {error instanceof Error ? error.message : 'Request failed.'} <button className="secondary-button" disabled={busy} onClick={retry}>Retry reconciliation</button></div> : null

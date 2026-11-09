@@ -19,6 +19,7 @@ export interface InvestmentWorkspace {
   bank_links: { id: string; event_id: string; transaction_id: string; amount: string; posting_date: string; description: string; account: string }[];
 }
 export interface InvestmentDraft {
+  reconciliation_job_id?: string;
   id: string; institution: string; filename: string; status: 'draft' | 'confirmed'; revision: number;
   mode: 'extend' | 'replace';
   replacement: { events: number; projects: number; imports: number; principal_splits: number; allocations: number; bank_links: number; reconciliation_cases: number; reinvestment_associations: number } | null;

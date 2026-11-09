@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowUpRight, ChevronDown, GitBranch, Plus, SlidersHorizonta
 import { api, dateLabel, jsonRequest, money, type Account, type TransactionDetail } from './api'
 import { cents, decimal, kindLabel, remaining, sumMoney, type BankCandidate, type InvestmentDraft, type InvestmentEvent, type InvestmentImportSummary, type InvestmentProject, type InvestmentWorkspace } from './investmentApi'
 import { DifferenceChip, ReconciliationPanel, ReconciliationRetry, trailQuery, useReconcile } from './Reconciliation'
+import { useQueuedOperation } from './operations'
 import { ProjectFlow } from './ProjectFlow'
 
 function ErrorBox({ error }: { error: unknown }) { return error ? <p role="alert" className="error-box">{error instanceof Error ? error.message : 'Unable to complete this action.'}</p> : null }
@@ -173,7 +174,7 @@ export function InvestmentUpload() {
 }
 
 export function InvestmentReview() {
-  const { id } = useParams(), navigate = useNavigate(), refresh = useRefresh()
+  const { id } = useParams(), navigate = useNavigate(), refresh = useRefresh(), client = useQueryClient()
   const reconciliation = useReconcile()
   const [acknowledged, setAcknowledged] = useState(false)
   const [replaceAcknowledged, setReplaceAcknowledged] = useState(false)
@@ -181,13 +182,26 @@ export function InvestmentReview() {
   const { data, error, refetch, isFetching, isPending } = useQuery({ queryKey: ['investment-review', id], queryFn: () => api<InvestmentDraft>(`/investments/imports/${id}`) })
   useEffect(() => { setAcknowledged(false); setReplaceAcknowledged(false) }, [id, data?.revision, data?.mode])
   useEffect(() => { setRowFilter('all') }, [id])
-  const confirm = useMutation({ mutationFn: () => api(`/investments/imports/${id}/confirm`, jsonRequest('POST', { expected_revision: data!.revision, acknowledge_warnings: acknowledged, acknowledge_replace: replaceAcknowledged })), onSuccess: async () => { await refresh(); reconciliation.mutate() } })
+  const confirm = useQueuedOperation<InvestmentDraft>({ kind: 'investment_confirm', target: id,
+    parameters: () => ({ expected_revision: data!.revision, acknowledge_warnings: acknowledged, acknowledge_replace: replaceAcknowledged }),
+    onSuccess: result => {
+      client.setQueryData(['investment-review', id], result)
+      client.invalidateQueries({ queryKey: ['investment-imports'] })
+      // Defer workspace reads until reconciliation has saved its changes.
+      client.invalidateQueries({ queryKey: ['investments'], refetchType: 'none' })
+      if (result.reconciliation_job_id) reconciliation.resume(result.reconciliation_job_id)
+      else reconciliation.mutate()
+    },
+    onRecovered: () => { void refetch() },
+    onError: () => { void refetch() },
+  })
   const cancel = useMutation({ mutationFn: () => api(`/investments/imports/${id}`, { method: 'DELETE' }), onSuccess: async () => { await refresh(); navigate('/investments/imports/new') } })
   const busy = confirm.isPending || cancel.isPending || isFetching
   const visibleRows = data?.rows.filter(row => rowFilter === 'all' || (rowFilter === 'existing' ? Boolean(row.existing_id) : !row.existing_id)) || []
   return <div className="statement-review investment-import-review">
     <header className="page-header"><div><div className="eyebrow">INVESTMENT REVIEW</div><h1>{data?.status === 'confirmed' ? 'Investment report imported' : 'Review investment report'}</h1><p>{data?.filename} · {data?.institution} · {data?.mode === 'replace' ? 'Replace existing data' : 'Extend existing data'}</p></div>{data && <span className={`badge ${data.status === 'confirmed' ? 'badge-success' : data.mode === 'replace' ? 'badge-error' : 'badge-match'}`}>{data.status === 'confirmed' ? 'Imported' : data.mode === 'replace' ? 'Replace' : 'Extend'}</span>}</header>
     <Link className="review-back" to="/investments/imports/new">Back to investment imports</Link>
+    {confirm.isPending && <p className="loading" role="status">Saving your import… You can refresh this page; progress is saved.</p>}
     <ErrorBox error={error || confirm.error || cancel.error} />
     <ReconciliationRetry error={reconciliation.error} retry={() => reconciliation.mutate()} busy={reconciliation.isPending} />
     {isPending && <p className="loading">Loading investment preview…</p>}

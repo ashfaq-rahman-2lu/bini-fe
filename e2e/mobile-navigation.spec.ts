@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from test_reconciliation import apon_csv, confirm, upload
 with engine.begin() as c:
-    c.execute(text('TRUNCATE investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE'))
+    c.execute(text('TRUNCATE operation_jobs, investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE'))
 with TestClient(app, headers={"X-Bini-Request": "1"}) as c:
     c.post("/api/auth/login", json={"username": "test-user", "password": "test-only-login-password"})
     confirm(c, upload(c, apon_csv()))

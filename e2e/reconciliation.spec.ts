@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test'
 const backend = path.resolve(process.env.BACKEND_DIR || '../backend')
 const env = { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql+psycopg://bini:bini_local_only@127.0.0.1:55433/bini_test', PYTHONPATH: backend + path.delimiter + path.join(backend, 'tests'), PYTHONDONTWRITEBYTECODE: '1' }
 function run(script: string) { return execFileSync(path.join(backend, '.venv/bin/python'), ['-c', script], { env }).toString().trim() }
-test.beforeEach(() => run("from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"))
+test.beforeEach(() => run("from conftest import engine; from sqlalchemy import text; c=engine.connect(); t=c.begin(); c.execute(text('TRUNCATE operation_jobs, investment_institutions, source_links, statement_rows, transactions, statements, accounts CASCADE')); t.commit(); c.close()"))
 
 async function importReport(page: import('@playwright/test').Page, fixture: string) {
   const buffer = Buffer.from(run(`import base64; from test_reconciliation import ${fixture.split('(')[0]}; print(base64.b64encode(${fixture}).decode())`), 'base64')
@@ -14,7 +14,7 @@ async function importReport(page: import('@playwright/test').Page, fixture: stri
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles({ name: 'synthetic.csv', mimeType: 'text/csv', buffer })
   await page.getByRole('button', { name: 'Preview investment import' }).click()
   await page.getByLabel('I reviewed the warnings').check()
-  const reconciliation = page.waitForResponse(r => r.url().endsWith('/investments/reconciliation/run') && r.request().method() === 'POST')
+  const reconciliation = page.waitForResponse(async r => /\/api\/jobs\/[^/?]+$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET' && (await r.json()).kind === 'reconcile' && (await r.json()).status === 'succeeded')
   await page.getByRole('button', { name: 'Confirm investment import' }).click()
   expect((await reconciliation).status()).toBe(200)
   await page.getByRole('link', { name: 'View investments' }).click()
@@ -188,7 +188,12 @@ test('reconciliation explains which waiting movements resolved or now need revie
   const after = { ...common, issues: [issue(1, 'wallet_match')], resolved: [resolved(0, 'bank_match'), resolved(2, 'wallet_match')], saved: { allocations: 1, bank_links: 1, associations: 0 } }
   let updated = false
   await page.route('**/api/investments/reconciliation', route => route.fulfill({ json: updated ? after : before }))
-  await page.route('**/api/investments/reconciliation/run', route => { updated = true; return route.fulfill({ json: after }) })
+  await page.route('**/api/jobs', route => {
+    if (route.request().postDataJSON()?.kind !== 'reconcile') return route.continue()
+    updated = true
+    return route.fulfill({ status: 202, json: { id: 'mock-reconciliation', kind: 'reconcile', status: 'queued' } })
+  })
+  await page.route('**/api/jobs/mock-reconciliation', route => route.fulfill({ json: { id: 'mock-reconciliation', kind: 'reconcile', status: 'succeeded', result: after } }))
   await page.getByRole('link', { name: 'Money reconciliation', exact: true }).click()
   await expect(page.getByLabel('Reconciliation counts', { exact: true })).toContainText('Waiting2')
   await page.getByRole('button', { name: 'Reconcile now', exact: true }).click()
@@ -212,7 +217,12 @@ test('reconciliation explains which waiting movements resolved or now need revie
 })
 
 test('failed reconciliation does not undo a confirmed import and offers retry', async ({ page }) => {
-  await page.route('**/api/investments/reconciliation/run', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary reconciliation failure' }) }))
+  await page.route('**/api/jobs/*', async route => {
+    const response = await route.fetch()
+    const job = await response.json()
+    return route.fulfill({ json: job.kind === 'reconcile'
+      ? { ...job, status: 'failed', result: null, error: { status: 503, detail: 'Temporary reconciliation failure' } } : job })
+  })
   const buffer = Buffer.from(run('import base64; from test_reconciliation import apon_csv; print(base64.b64encode(apon_csv()).decode())'), 'base64')
   await visit(page, '/investments/imports/new')
   await page.getByLabel('Investment CSV', { exact: true }).setInputFiles({ name: 'synthetic.csv', mimeType: 'text/csv', buffer })
@@ -221,7 +231,7 @@ test('failed reconciliation does not undo a confirmed import and offers retry', 
   await page.getByRole('button', { name: 'Confirm investment import' }).click()
   await expect(page.getByRole('heading', { name: 'Investment report imported' })).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('Import saved.')
-  await page.unroute('**/api/investments/reconciliation/run')
+  await page.unroute('**/api/jobs/*')
   await page.getByRole('button', { name: 'Retry reconciliation' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
 })
@@ -233,7 +243,7 @@ test('bank statement confirmation triggers an independent investment reconciliat
   expect(draftResponse.ok()).toBeTruthy()
   const draft = await draftResponse.json()
   await visit(page, `/imports/${draft.id}`)
-  const reconciliation = page.waitForResponse(r => r.url().endsWith('/investments/reconciliation/run') && r.request().method() === 'POST')
+  const reconciliation = page.waitForResponse(async r => /\/api\/jobs\/[^/?]+$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET' && (await r.json()).kind === 'reconcile' && (await r.json()).status === 'succeeded')
   await page.getByRole('button', { name: 'Confirm import', exact: true }).click()
   expect((await reconciliation).status()).toBe(200)
   await expect(page.getByRole('heading', { name: 'Statement imported' })).toBeVisible()
