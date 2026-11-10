@@ -198,7 +198,9 @@ function Review() {
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null)
   const navigate = useNavigate()
   const client = useQueryClient()
-  const query = useQuery({ queryKey: ['import', id], queryFn: () => api<ImportReview>('/imports/' + id) })
+  const location = useLocation()
+  useEffect(() => { if (location.state?.uploaded) navigate(location.pathname + location.search, { replace: true, state: null }) }, [id])
+  const query = useQuery({ refetchOnMount: location.state?.uploaded ? false : 'always', queryKey: ['import', id], queryFn: () => api<ImportReview>('/imports/' + id) })
   const data = query.data
   const decision = useMutation({ mutationFn: ({ row, value }: { row: ReviewRow; value: string }) => api<ImportReview>('/imports/' + id + '/decisions', jsonRequest('PATCH', { decisions: [{ row_id: row.id, decision: value === 'auto' ? null : value === 'new' ? 'new' : 'match', transaction_id: ['auto', 'new'].includes(value) ? null : value }] })), onSuccess: result => client.setQueryData(['import', id], result) })
   const confirm = useQueuedOperation<ImportReview>({ kind: 'bank_confirm', target: id, parameters: () => ({ expected_revision: data!.revision }), onSuccess: result => {

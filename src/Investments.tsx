@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ArrowUpRight, ChevronDown, GitBranch, Plus, SlidersHorizontal, Table2, X } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ChevronDown, GitBranch, Plus, RefreshCw, SlidersHorizontal, Table2, X } from 'lucide-react'
 import { api, dateLabel, jsonRequest, money, type Account, type TransactionDetail } from './api'
 import { cents, decimal, kindLabel, remaining, sumMoney, type BankCandidate, type InvestmentDraft, type InvestmentEvent, type InvestmentImportSummary, type InvestmentProject, type InvestmentWorkspace } from './investmentApi'
 import { DifferenceChip, ReconciliationPanel, ReconciliationRetry, trailQuery, useReconcile } from './Reconciliation'
@@ -20,7 +20,7 @@ export function Investments() {
   const [params, setParams] = useSearchParams()
   const [selected, setSelected] = useState<string | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const { data, error, isPending } = useQuery({ queryKey: ['investments'], queryFn: () => api<InvestmentWorkspace>('/investments') })
+  const { data, error, isPending, refetch } = useQuery({ queryKey: ['investments'], staleTime: 30_000, queryFn: ({ signal }) => api<InvestmentWorkspace>('/investments', { signal }) })
   const projectId = params.get('project') || '', kind = params.get('kind') || '', search = params.get('search') || ''
   const project = data?.projects.find(p => p.id === projectId)
   const showFlow = Boolean(project) && params.get('view') !== 'activity'
@@ -58,6 +58,7 @@ export function Investments() {
         <div className="investment-filter-bar">
           <label><span className="sr-only">Project</span><select name="project" value={projectId} onChange={e => { const next = new URLSearchParams(params); e.target.value ? next.set('project', e.target.value) : next.delete('project'); next.delete('page'); setParams(next) }}><option value="">All projects and wallet</option>{data.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           <button className="secondary-button" onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={15} /> Filters{['kind', 'search', 'from', 'to'].filter(k => params.get(k)).length > 0 && <span className="filter-count">{['kind', 'search', 'from', 'to'].filter(k => params.get(k)).length}</span>}</button>
+          <button className="secondary-button" aria-label="Refresh investments" title="Refresh investments" onClick={() => { void refetch(); if (projectId) void trail.refetch() }}><RefreshCw size={15} /></button>
           {project && <ProjectCompletion key={project.id + project.status} project={project} />}
         </div>
         {filtersOpen && <InvestmentFilters key={params.toString()} params={params} apply={next => { setParams(next); setFiltersOpen(false) }} close={() => setFiltersOpen(false)} />}
@@ -107,7 +108,7 @@ function InvestmentFilters({ params, apply, close }: { params: URLSearchParams; 
 export function InvestmentReconciliation() {
   const [params] = useSearchParams()
   const [selected, setSelected] = useState<string | null>(null)
-  const { data, error, isPending } = useQuery({ queryKey: ['investments'], queryFn: () => api<InvestmentWorkspace>('/investments') })
+  const { data, error, isPending } = useQuery({ queryKey: ['investments'], staleTime: 30_000, queryFn: ({ signal }) => api<InvestmentWorkspace>('/investments', { signal }) })
   const event = data?.events.find(e => e.id === selected)
   return <>
     <header className="page-header"><div><div className="eyebrow">INVESTMENT TRACKER · BDT</div><h1>Money reconciliation</h1><p>Confirm where the money came from and where it went.</p></div></header>
@@ -154,10 +155,12 @@ function ProjectDetails({ project: p }: { project: InvestmentProject }) {
 }
 
 export function InvestmentUpload() {
-  const navigate = useNavigate(), refresh = useRefresh()
+  const navigate = useNavigate(), refresh = useRefresh(), client = useQueryClient()
+  const controller = useRef(new AbortController())
+  useEffect(() => { controller.current = new AbortController(); return () => controller.current.abort() }, [])
   const [mode, setMode] = useState<'extend' | 'replace'>('extend')
   const { data: imports = [], error } = useQuery({ queryKey: ['investment-imports'], queryFn: () => api<InvestmentImportSummary[]>('/investments/imports') })
-  const upload = useMutation({ mutationFn: (form: FormData) => api<InvestmentDraft>('/investments/imports', { method: 'POST', body: form }), onSuccess: async draft => { await refresh(); navigate(`/investments/imports/${draft.id}`) } })
+  const upload = useMutation({ mutationFn: (form: FormData) => api<InvestmentDraft>('/investments/imports', { method: 'POST', body: form, signal: controller.current.signal }), onSuccess: async draft => { if (controller.current.signal.aborted) return; await refresh(); if (controller.current.signal.aborted) return; client.setQueryData(['investment-review', draft.id], draft); navigate(`/investments/imports/${draft.id}`, { state: { uploaded: true } }) } })
   return <>
     <header className="page-header"><div><div className="eyebrow">INVESTMENT IMPORT</div><h1>Import investment CSV</h1><p>Preview the institution’s report before adding it to your investment ledger.</p></div><Link to="/csv-update" className="secondary-button">Update a fixed CSV</Link></header>
     <Link className="review-back" to="/investments"><ArrowLeft size={12} /> Investments</Link>
@@ -174,12 +177,13 @@ export function InvestmentUpload() {
 }
 
 export function InvestmentReview() {
-  const { id } = useParams(), navigate = useNavigate(), refresh = useRefresh(), client = useQueryClient()
+  const { id } = useParams(), location = useLocation(), navigate = useNavigate(), refresh = useRefresh(), client = useQueryClient()
   const reconciliation = useReconcile()
   const [acknowledged, setAcknowledged] = useState(false)
   const [replaceAcknowledged, setReplaceAcknowledged] = useState(false)
   const [rowFilter, setRowFilter] = useState('all')
-  const { data, error, refetch, isFetching, isPending } = useQuery({ queryKey: ['investment-review', id], queryFn: () => api<InvestmentDraft>(`/investments/imports/${id}`) })
+  useEffect(() => { if (location.state?.uploaded) navigate(location.pathname + location.search, { replace: true, state: null }) }, [id])
+  const { data, error, refetch, isFetching, isPending } = useQuery({ queryKey: ['investment-review', id], refetchOnMount: location.state?.uploaded ? false : 'always', queryFn: () => api<InvestmentDraft>(`/investments/imports/${id}`) })
   useEffect(() => { setAcknowledged(false); setReplaceAcknowledged(false) }, [id, data?.revision, data?.mode])
   useEffect(() => { setRowFilter('all') }, [id])
   const confirm = useQueuedOperation<InvestmentDraft>({ kind: 'investment_confirm', target: id,

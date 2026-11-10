@@ -278,8 +278,11 @@ test('small wallet differences require consent and retain the exact chip after r
   await page.screenshot({ path: testInfo.outputPath('difference-review.png'), fullPage: true })
   await issue.getByRole('button', { name: 'Preview affected movements', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Review impact preview', exact: true })).toBeVisible()
+  let redundantReconciliationReads = 0
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/investments/reconciliation' && request.method() === 'GET') redundantReconciliationReads++ })
   await issue.getByRole('button', { name: 'Accept difference and save' }).click()
   await expect(page.getByRole('region', { name: 'Wallet reconciliation' })).toContainText('Wallet: Reconciled')
+  expect(redundantReconciliationReads).toBe(0)
   await reload(page)
   const reviewed = page.locator('.resolved-case').filter({ hasText: 'Wallet sources matched' })
   await reviewed.locator(':scope > summary').click()
