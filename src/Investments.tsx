@@ -9,7 +9,7 @@ import { useQueuedOperation } from './operations'
 import { ProjectFlow } from './ProjectFlow'
 
 function ErrorBox({ error }: { error: unknown }) { return error ? <p role="alert" className="error-box">{error instanceof Error ? error.message : 'Unable to complete this action.'}</p> : null }
-function Stat({ label, value }: { label: string; value: string }) { return <div className="stat"><span>{label}</span><strong>{value}</strong></div> }
+function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) { return <div className="stat"><span>{label}</span><strong>{value}</strong>{hint && <small>{hint}</small>}</div> }
 function Amount({ value }: { value: string | null }) { return <>{value === null ? 'Not classified' : money(value)}</> }
 function useRefresh() {
   const client = useQueryClient()
@@ -21,12 +21,15 @@ export function Investments() {
   const [selected, setSelected] = useState<string | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const { data, error, isPending, refetch } = useQuery({ queryKey: ['investments'], staleTime: 30_000, queryFn: ({ signal }) => api<InvestmentWorkspace>('/investments', { signal }) })
-  const projectId = params.get('project') || '', kind = params.get('kind') || '', search = params.get('search') || ''
-  const project = data?.projects.find(p => p.id === projectId)
+  const status = ['active', 'closed'].includes(params.get('status') || '') ? params.get('status')! : ''
+  const projects = data?.projects.filter(p => !status || p.status === status) || []
+  const project = projects.find(p => p.id === params.get('project'))
+  const projectId = project?.id || '', kind = params.get('kind') || '', search = params.get('search') || ''
+  const projectIds = new Set(projects.map(p => p.id))
   const showFlow = Boolean(project) && params.get('view') !== 'activity'
   const trail = useQuery(trailQuery(projectId))
   const related = new Set(trail.data?.events.map(e => e.id))
-  const events = data?.events.filter(e => (!projectId || related.has(e.id) || e.project_id === projectId) && (!kind || e.kind === kind) && (!search || e.description.toLocaleLowerCase().includes(search.toLocaleLowerCase())) && (!params.get('from') || e.posting_date >= params.get('from')!) && (!params.get('to') || e.posting_date <= params.get('to')!)).slice().reverse() || []
+  const events = data?.events.filter(e => (projectId ? related.has(e.id) || e.project_id === projectId : !status || (e.project_id !== null && projectIds.has(e.project_id))) && (!kind || e.kind === kind) && (!search || e.description.toLocaleLowerCase().includes(search.toLocaleLowerCase())) && (!params.get('from') || e.posting_date >= params.get('from')!) && (!params.get('to') || e.posting_date <= params.get('to')!)).slice().reverse() || []
   const page = Math.max(1, Number(params.get('page') || 1) || 1), pages = Math.max(1, Math.ceil(events.length / 50)), currentPage = Math.min(page, pages)
   return <>
     <header className="page-header investment-header"><div><div className="eyebrow">INVESTMENT TRACKER · BDT</div><h1>Investments</h1><p>Follow capital, installments and where your returned money goes.</p></div><div className="reconciliation-actions"><Link to={{ pathname: '/investments/reconciliation', search: params.toString() }} className="secondary-button">Money reconciliation <ArrowUpRight size={16} /></Link><Link to="/investments/imports/new" className="primary-button"><Plus size={16} /> Import investment CSV</Link></div></header>
@@ -36,27 +39,30 @@ export function Investments() {
       <details className="panel investment-summary">
         <summary><span>Investment summary</span><ChevronDown size={18} aria-hidden="true" /></summary>
         <div className="investment-summary-content">
-      <section className="stats-grid" aria-label="Investment totals">
-        <Stat label="External funding · BDT" value={money(sumMoney(data.projects.map(p => p.external_funding)))} />
-        <Stat label="Total invested including reinvestments" value={money(sumMoney(data.projects.map(p => p.invested)))} />
-        <Stat label="Installments and capital refunds" value={money(sumMoney(data.projects.map(p => p.returned)))} />
-        <Stat label="Bank payouts recorded by provider" value={money(sumMoney(data.events.filter(e => e.kind === 'cashout').map(e => e.amount)))} />
+      <div className="summary-group-heading"><h2>Portfolio totals</h2><span>BDT</span></div>
+      <section className="stats-grid investment-summary-grid" aria-label="Investment totals">
+        <Stat label="External funding" value={money(sumMoney(data.projects.map(p => p.external_funding)))} hint="From your bank" />
+        <Stat label="Total invested" value={money(sumMoney(data.projects.map(p => p.invested)))} hint="Includes reinvestments" />
+        <Stat label="Returns received" value={money(sumMoney(data.projects.map(p => p.returned)))} hint="Capital + profit" />
+        <Stat label="Bank payouts" value={money(sumMoney(data.events.filter(e => e.kind === 'cashout').map(e => e.amount)))} hint="Reported by provider" />
       </section>
-      <section className="stats-grid" aria-label="Investment profit and reconciliation">
-        <Stat label="Classified installment profit · BDT" value={money(sumMoney(data.projects.map(p => p.classified_profit)))} />
-        <Stat label="Final gain / loss · closed projects" value={data.projects.some(p => p.status === 'closed') ? money(sumMoney(data.projects.filter(p => p.status === 'closed').map(p => p.final_gain!))) : 'Not finalized'} />
-        <Stat label="Repayments without capital / profit split" value={money(sumMoney(data.projects.map(p => p.unclassified_returns)))} />
-        <Stat label="Payout amounts matched in bank ledger" value={money(sumMoney(data.bank_links.filter(l => data.events.find(e => e.id === l.event_id)?.kind === 'cashout').map(l => l.amount)))} />
+      <div className="summary-group-heading"><h2>Profit & review</h2><span>BDT</span></div>
+      <section className="stats-grid investment-summary-grid" aria-label="Investment profit and reconciliation">
+        <Stat label="Installment profit" value={money(sumMoney(data.projects.map(p => p.classified_profit)))} hint="Classified returns only" />
+        <Stat label="Closed project gain" value={data.projects.some(p => p.status === 'closed') ? money(sumMoney(data.projects.filter(p => p.status === 'closed').map(p => p.final_gain!))) : 'Not finalized'} hint="Final gain / loss" />
+        <Stat label="Unclassified returns" value={money(sumMoney(data.projects.map(p => p.unclassified_returns)))} hint="Needs capital / profit split" />
+        <Stat label="Bank matched" value={money(sumMoney(data.bank_links.filter(l => data.events.find(e => e.id === l.event_id)?.kind === 'cashout').map(l => l.amount)))} hint="Payouts linked to bank ledger" />
       </section>
-      <div className="investment-wallets">{data.institutions.filter(i => i.wallet_balance !== null).map(i => <p key={i.id}><strong>{i.name} wallet: {money(i.wallet_balance!)} BDT</strong><span>As reported on {dateLabel(i.wallet_as_of!)} · latest confirmed report</span></p>)}</div>
-      <p className="footnote">Repayments include capital and profit. Classify each installment to measure profit and outstanding principal, or close a completed project to calculate its final gain/loss. Bank payouts require matching to your bank ledger. Tracing shows your recorded allocations; the CSV does not identify which project funded each withdrawal.</p>
+      <div className="investment-wallets">{data.institutions.filter(i => i.wallet_balance !== null).map(i => <div className="investment-wallet" key={i.id}><div><span>{i.name} wallet</span><small>Reported {dateLabel(i.wallet_as_of!)}</small></div><strong>{money(i.wallet_balance!)} <small>BDT</small></strong></div>)}</div>
+      <p className="footnote summary-note">Installment profit and closed project gain overlap; don’t add them together.</p>
       {project && <ProjectDetails key={project.id + project.status + project.expected_total} project={project} />}
         </div>
       </details>
       {!data.projects.length && <section className="panel empty-state"><h2>Start tracking your projects</h2><p>Import your institution’s CSV, review the source warnings, then confirm.</p><Link to="/investments/imports/new" className="primary-button">Import investment CSV</Link></section>}
       <section className="panel investment-activity">
         <div className="investment-filter-bar">
-          <label><span className="sr-only">Project</span><select name="project" value={projectId} onChange={e => { const next = new URLSearchParams(params); e.target.value ? next.set('project', e.target.value) : next.delete('project'); next.delete('page'); setParams(next) }}><option value="">All projects and wallet</option>{data.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+          <label className="project-status-filter"><span className="sr-only">Project status filter</span><select name="status" value={status} onChange={e => { const next = new URLSearchParams(params); const value = e.target.value; value ? next.set('status', value) : next.delete('status'); if (project && value && project.status !== value) next.delete('project'); next.delete('page'); setParams(next) }}><option value="">All statuses</option><option value="active">Open projects</option><option value="closed">Closed projects</option></select></label>
+          <label><span className="sr-only">Project</span><select name="project" value={projectId} onChange={e => { const next = new URLSearchParams(params); e.target.value ? next.set('project', e.target.value) : next.delete('project'); next.delete('page'); setParams(next) }}><option value="">{status === 'active' ? 'All open projects' : status === 'closed' ? 'All closed projects' : 'All projects and wallet'}</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           <button className="secondary-button" onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={15} /> Filters{['kind', 'search', 'from', 'to'].filter(k => params.get(k)).length > 0 && <span className="filter-count">{['kind', 'search', 'from', 'to'].filter(k => params.get(k)).length}</span>}</button>
           <button className="secondary-button" aria-label="Refresh investments" title="Refresh investments" onClick={() => { void refetch(); if (projectId) void trail.refetch() }}><RefreshCw size={15} /></button>
           {project && <ProjectCompletion key={project.id + project.status} project={project} />}
@@ -64,14 +70,14 @@ export function Investments() {
         {filtersOpen && <InvestmentFilters key={params.toString()} params={params} apply={next => { setParams(next); setFiltersOpen(false) }} close={() => setFiltersOpen(false)} />}
         <ErrorBox error={trail.error} />
         {project && <div className="investment-view-switch" role="group" aria-label="Investment view"><button className={showFlow ? 'selected' : ''} aria-pressed={showFlow} onClick={() => { const next = new URLSearchParams(params); next.delete('view'); next.delete('page'); setParams(next) }}><GitBranch size={16} /> Money flow</button><button className={!showFlow ? 'selected' : ''} aria-pressed={!showFlow} onClick={() => { const next = new URLSearchParams(params); next.set('view', 'activity'); next.delete('page'); setParams(next) }}><Table2 size={16} /> Activity table</button><span>{events.length} movements · BDT</span></div>}
-        {!project && <p className="flow-select-hint"><GitBranch size={18} /> {events.length} movements · BDT</p>}
+        {!project && <p className="flow-select-hint"><GitBranch size={18} /> {events.length} movements · BDT{status && <span> · {status === 'active' ? 'Open' : 'Closed'} projects</span>}</p>}
         {showFlow ? trail.data ? <ProjectFlow key={`flow:${params.toString()}`} trail={trail.data} project={project!} openEvent={setSelected} filters={params} /> : !trail.error && <p className="loading">Loading money flow…</p> : <>
         <p className="mobile-table-hint">Swipe the table to see amounts, money traces and bank matches.</p>
         <div className="table-scroll"><table><thead><tr><th>Date</th><th>Project / movement</th><th>Amount</th><th>Profit split / money trace</th><th>Bank match</th></tr></thead><tbody>{events.slice((currentPage - 1) * 50, currentPage * 50).map(e => <tr key={e.id}>
           <td className="date-cell">{dateLabel(e.posting_date)}</td><td><button className="description-button" onClick={() => setSelected(e.id)}><span>{data.projects.find(p => p.id === e.project_id)?.name || 'Institution wallet'}</span><small>{kindLabel(e.kind)} <ArrowUpRight size={11} /></small></button></td>
           <td><span className="amount">{money(e.amount)}</span>{e.difference && <DifferenceChip amount={e.difference.amount} />}</td><td className="subtle">{e.kind === 'repayment' ? e.principal === null ? 'Capital / profit not classified' : `Profit ${money(e.profit!)}` : ''}<br />{['repayment', 'refund'].includes(e.kind) ? `${money(remaining(e.amount, e.allocated_out))} untraced` : ['reinvestment', 'cashout'].includes(e.kind) ? `${money(e.allocated_in)} traced to source returns` : e.kind === 'reinvestment_settlement' ? 'Wallet settlement; counted with reinvestment' : 'External funding'}{trail.data?.events.find(t => t.id === e.id)?.wallet && (() => { const wallet = trail.data.events.find(t => t.id === e.id)!.wallet!; return <small className="wallet-credit">Available: {wallet.available === null ? 'Needs review' : money(wallet.available)} · Reserved: {money(wallet.reserved)} · Consumed: {money(wallet.consumed)}</small> })()}</td>
           <td className="subtle">{['investment', 'cashout'].includes(e.kind) ? `${money(e.bank_linked)} / ${money(e.amount)}` : 'Internal movement'}</td>
-        </tr>)}</tbody></table></div>
+        </tr>)}{!events.length && <tr><td colSpan={5} className="investment-empty">No movements match these filters.</td></tr>}</tbody></table></div>
         <div className="table-footer"><span>Page {currentPage} of {pages}</span><div><button className="secondary-button" disabled={currentPage <= 1} onClick={() => { const next = new URLSearchParams(params); next.set('page', String(currentPage - 1)); setParams(next) }}>Previous</button><button className="secondary-button" disabled={currentPage >= pages} onClick={() => { const next = new URLSearchParams(params); next.set('page', String(currentPage + 1)); setParams(next) }}>Next</button></div></div>
         </>}
       </section>

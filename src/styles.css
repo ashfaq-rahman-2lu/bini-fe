@@ -269,9 +269,29 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-
 .investment-link { padding: 13px 0; border-bottom: 1px solid var(--border-soft); }
 .investment-link .secondary-button { margin-top: 10px; }
 .investment-text-button { color: var(--accent); background: none; border: none; padding: 0; text-align: left; font-size: 11px; line-height: 1.8; cursor: pointer; }
-.investment-wallets { display: flex; gap: 24px; flex-wrap: wrap; margin-block: 20px; }
-.investment-wallets p { margin: 0; font-size: 12px; }
-.investment-wallets span { display: block; margin-top: 8px; color: var(--text-muted); font-size: 10px; }
+.summary-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.summary-group-heading h2 { font-size: 12px; }
+.summary-group-heading > span { font-size: 10px; color: var(--text-muted); letter-spacing: .06em; }
+.investment-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }
+.investment-summary-grid .stat { display: grid; grid-template-rows: 2.8em auto 2.9em; gap: 8px; min-width: 0; padding: 14px 16px; background: var(--surface-inset); font-size: 11px; }
+.investment-summary-grid .stat > span { margin: 0; line-height: 1.4; color: var(--text-secondary); }
+.investment-summary-grid .stat > strong { font-size: clamp(20px, 2vw, 25px); line-height: 1.2; letter-spacing: -.5px; white-space: nowrap; overflow-x: auto; }
+.investment-summary-grid .stat > small { font-size: 10px; line-height: 1.45; color: var(--text-muted); }
+.investment-wallets { display: grid; gap: 10px; margin-block: 4px 14px; }
+.investment-wallet { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 16px; border: 1px solid var(--border-soft); border-radius: 7px; }
+.investment-wallet > div { display: grid; gap: 4px; min-width: 0; }
+.investment-wallet span { font-size: 12px; overflow-wrap: anywhere; }
+.investment-wallet small { font-size: 10px; color: var(--text-muted); font-weight: 400; }
+.investment-wallet > strong { font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.summary-note { margin: 0 0 4px; line-height: 1.6; }
+@media(min-width:1200px) { .investment-summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media(max-width:600px) {
+  .investment-summary-grid .stat { padding: 12px; }
+  .investment-summary-grid .stat > strong { font-size: 20px; }
+  .investment-wallet { padding: 12px; gap: 10px; }
+  .investment-wallet > strong { font-size: 16px; }
+}
+@media(max-width:340px) { .investment-summary-grid { grid-template-columns: 1fr; } }
 @media(max-width:760px) {
   .investment-summary > summary { padding: 18px 16px; }
   .investment-summary-content { padding: 16px; }
@@ -590,8 +610,9 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-
 @media(max-width:760px) { .investment-filter-bar { padding-inline: 16px; } .investment-filter-dialog { padding: 16px; } }
 
 /* A single project toolbar, shallow view tabs and one destination strip. */
-.investment-filter-bar { align-items: center; padding: 14px 20px; gap: 10px; }
+.investment-filter-bar { align-items: center; padding: 14px 20px; gap: 10px; flex-wrap: wrap; }
 .investment-filter-bar > label { flex: 1; max-width: none; }
+.investment-filter-bar > .project-status-filter { flex: 0 0 148px; }
 .investment-filter-bar .project-completion { padding: 0; flex-shrink: 0; gap: 8px; }
 .completion-button { border-color: var(--accent-border); color: var(--accent); background: var(--accent-bg); }
 .investment-filter-bar .secondary-button, .investment-filter-bar select { min-height: 36px; padding: 8px 10px; font-size: 11px; }
@@ -712,6 +733,11 @@ select:not([multiple]):not([size]) {
 .investment-filter-bar > label { display: block; }
 .investment-filter-bar select, .investment-filter-bar > .secondary-button { height: 38px; min-height: 38px; }
 .investment-filter-bar > .secondary-button { flex-shrink: 0; }
+.investment-empty { padding: 28px 20px; text-align: center; color: var(--text-muted); }
+@media(max-width:600px) {
+  .investment-filter-bar > .project-status-filter { flex: 1 1 100%; }
+  .investment-filter-bar > label:not(.project-status-filter) { flex: 1 1 calc(100% - 140px); }
+}
 
 /* Dense ledger overview, aligned filters, and explicit debit/credit labels. */
 .ledger-stats { gap: 0; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); overflow: hidden; margin-bottom: 20px; }
