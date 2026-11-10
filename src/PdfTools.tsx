@@ -80,10 +80,11 @@ export function StatementUpload() {
           if (item.file!.size > maxBytes) throw new Error('PDF must be at most 10 MB.')
           data.append('file', item.file!); data.append('password', item.secret)
           const result = await api<ImportReview>('/imports', { method: 'POST', body: data, signal })
+          if (signal.aborted) break
           update(item.key, { state: 'ready', file: null, result: { id: result.id, status: result.status, canConfirm: result.can_confirm } })
           client.setQueryData(['import', result.id], result)
           await client.invalidateQueries({ queryKey: ['imports'] })
-          if (files.length === 1) navigate('/imports/' + result.id)
+          if (!signal.aborted && files.length === 1) navigate('/imports/' + result.id, { state: { uploaded: true } })
         } catch (error) {
           if (signal.aborted) break
           update(item.key, { state: 'failed', error: errorMessage(error) })

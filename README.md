@@ -158,3 +158,8 @@ Bank/CSV confirmation and **Reconcile now** submit `POST /api/jobs` (202), then 
 Returned review/reconciliation snapshots populate the query cache. Investment workspace views refresh after reconciliation, avoiding the previous pre/post reconciliation double fetch. Import uploads/previews and individual manual review actions retain their existing APIs.
 
 Job recovery uses the authenticated backend rather than storing financial results in browser storage. Completed jobs expire after seven days of retention; source documents and financial records remain in their existing backend tables. For timings in Better Stack, inspect `job.duration_ms`/`job.kind` for background work and `request.duration_ms`/`request.route` for HTTP calls.
+
+
+### Response caching and latency
+
+Workspace, reconciliation and project-trail queries reuse successful responses for 30 seconds when navigating. Refresh investments and Refresh review bypass freshness. Saves and completed jobs invalidate dependent views, install returned reconciliation snapshots, and refetch active views once. Upload previews are cached before navigation; the initial upload navigation skips a redundant review fetch, while later visits retain editable-review freshness. Logout cancels queries and clears financial caches. Deploy the compatible backend first; API routes and response shapes are unchanged.

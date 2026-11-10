@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, dateLabel, jsonRequest, money } from './api'
 import { cents, decimal, kindLabel, remaining, sumMoney, type SettlementDifference, type InvestmentEvent, type InvestmentWorkspace } from './investmentApi'
@@ -38,7 +38,7 @@ export interface Trail {
   bank_links: { id: string; event_id: string; transaction_id: string; amount: string; linked_amount: string; project_share: string | null; payout_project_share: string; posting_date: string; business_date: string | null; description: string; account: string; provenance: string; explanation: string }[];
   issues: Issue[];
 }
-export const trailQuery = (id: string) => ({ queryKey: ['investments', 'trail', id], queryFn: () => api<Trail>(`/investments/projects/${id}/trail`), enabled: Boolean(id) })
+export const trailQuery = (id: string) => ({ queryKey: ['investments', 'trail', id], staleTime: 30_000, queryFn: ({ signal }: { signal: AbortSignal }) => api<Trail>(`/investments/projects/${id}/trail`, { signal }), enabled: Boolean(id) })
 type ReconciliationResult = (before: Reconciliation | undefined, after: Reconciliation) => void
 export function useReconcile(onResult?: ReconciliationResult) {
   const client = useQueryClient()
@@ -115,7 +115,7 @@ function MovementChangeList({ changes, data, openEvent }: { changes: MovementCha
 }
 
 export function ReconciliationPanel({ data, openEvent }: { data: InvestmentWorkspace; openEvent: (id: string) => void }) {
-  const query = useQuery({ queryKey: ['investments', 'reconciliation'], queryFn: () => api<Reconciliation>('/investments/reconciliation') })
+  const query = useQuery({ queryKey: ['investments', 'reconciliation'], staleTime: 30_000, queryFn: ({ signal }) => api<Reconciliation>('/investments/reconciliation', { signal }) })
   const [latestChanges, setLatestChanges] = useState<{ changes: MovementChange[]; reviewedEvent: string | null } | null>(null)
   function showChanges(before: Reconciliation | undefined, after: Reconciliation, reviewedEvent: string | null = null) {
     if (before) setLatestChanges({ changes: reconciliationChanges(before, after), reviewedEvent })
@@ -128,7 +128,7 @@ export function ReconciliationPanel({ data, openEvent }: { data: InvestmentWorks
     { key: 'waiting', title: 'Waiting', issues: query.data?.issues.filter(i => i.kind === 'dependent_wallet') || [], empty: 'No items waiting for an earlier review.' },
   ]
   return <section className="reconciliation-panel" aria-label="Wallet reconciliation">
-    <div className="section-heading"><div><h2>Match your money</h2><p className="footnote">Run matching, then review the items below.</p></div><button className="secondary-button" onClick={() => run.mutate()} disabled={run.isPending}>{run.isPending ? 'Reconciling…' : 'Reconcile now'}</button></div>
+    <div className="section-heading"><div><h2>Match your money</h2><p className="footnote">Run matching, then review the items below.</p></div><button className="secondary-button" onClick={() => void query.refetch()}>Refresh review</button><button className="secondary-button" onClick={() => run.mutate()} disabled={run.isPending}>{run.isPending ? 'Reconciling…' : 'Reconcile now'}</button></div>
     {(query.error || run.error) && <p role="alert" className="error-box">{(query.error || run.error)?.message} <button className="secondary-button" onClick={() => void query.refetch()}>Refresh review</button></p>}
     {run.data?.saved && !latestChanges?.reviewedEvent && <p role="status" className="footnote">Saved {run.data.saved.allocations} money traces, {run.data.saved.bank_links} bank matches and {run.data.saved.associations} settlement associations.</p>}
     {query.data?.institutions.map(i => <p key={i.id} className="reconciliation-status"><strong>{i.name}</strong><span className={`movement-chip ${i.wallet_status === 'needs_review' ? 'chip-review' : 'chip-success'}`}>Wallet: {statusText(i.wallet_status)}</span><span className={`movement-chip ${i.bank_status === 'needs_review' ? 'chip-review' : 'chip-success'}`}>Bank: {statusText(i.bank_status)}</span></p>)}
@@ -181,14 +181,16 @@ function CaseReview({ issue, revision, data, refresh, onResult, openEvent }: { i
   const [acceptDifference, setAcceptDifference] = useState(false)
   const [selected, setSelected] = useState<string[]>(existing.map(a => a.source_id))
   const [associations, setAssociations] = useState<string[]>(issue.association_ids || [])
+  const controller = useRef(new AbortController())
+  useEffect(() => { controller.current = new AbortController(); return () => controller.current.abort() }, [issue.id])
   const formVersion = useRef(0)
   const [preview, setPreview] = useState<{ body: unknown; changes: MovementChange[] } | null>(null)
   const previewRequest = useMutation({ mutationFn: async ({ body, version }: { body: unknown; version: number }) => {
     const before = client.getQueryData<Reconciliation>(['investments', 'reconciliation'])
-    const after = await api<Reconciliation>(`/investments/reconciliation/cases/${issue.id}/preview`, jsonRequest('POST', body))
+    const after = await api<Reconciliation>(`/investments/reconciliation/cases/${issue.id}/preview`, { ...jsonRequest('POST', body), signal: controller.current.signal })
     return { body, version, changes: before ? reconciliationChanges(before, after) : [] }
   }, onSuccess: result => { if (result.version === formVersion.current) setPreview(result) } })
-  const mutation = useMutation({ mutationFn: (body: unknown) => api<Reconciliation>(`/investments/reconciliation/cases/${issue.id}`, jsonRequest('PATCH', body)), onMutate: () => client.getQueryData<Reconciliation>(['investments', 'reconciliation']), onSuccess: async (result, _variables, before) => { onResult(before, result); await client.invalidateQueries({ queryKey: ['investments'] }); await client.invalidateQueries({ queryKey: ['investment-review'] }) }, onError: () => { setPreview(null); formVersion.current += 1 } })
+  const mutation = useMutation({ mutationFn: (body: unknown) => api<Reconciliation>(`/investments/reconciliation/cases/${issue.id}`, { ...jsonRequest('PATCH', body), signal: controller.current.signal }), onMutate: () => client.getQueryData<Reconciliation>(['investments', 'reconciliation']), onSuccess: async (result, _variables, before) => { onResult(before, result); await client.cancelQueries({ queryKey: ['investments', 'reconciliation'] }); await client.invalidateQueries({ queryKey: ['investments'], refetchType: 'none' }); client.setQueryData(['investments', 'reconciliation'], result); await Promise.all([client.refetchQueries({ predicate: q => q.queryKey[0] === 'investments' && q.queryKey[1] !== 'reconciliation', type: 'active' }), client.invalidateQueries({ queryKey: ['investment-review'], refetchType: 'none' }), client.invalidateQueries({ queryKey: ['investment-bank'] })]) }, onError: () => { setPreview(null); formVersion.current += 1 } })
   const remove = useMutation({ mutationFn: (path: string) => api(path, { method: 'DELETE' }), onSuccess: () => client.invalidateQueries({ queryKey: ['investments'] }) })
   const event = data.events.find(e => e.id === issue.event_id)
   const supported = ['delayed_booking', 'wallet_match', 'reinvestment_group', 'bank_match'].includes(issue.kind)
