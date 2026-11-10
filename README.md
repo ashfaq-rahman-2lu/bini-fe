@@ -21,7 +21,9 @@ FastAPI runs independently, normally at http://127.0.0.1:8000. Vite proxies `/ap
 API_PROXY_TARGET=http://127.0.0.1:8002 npm run dev
 ```
 
-`VITE_API_BASE_URL` defaults to `/api`. Copy `.env.example` to `.env.local` only when overriding it. Cookie authentication needs a same-origin proxy or same-site HTTPS custom domains; use the deployment setup below. Never put database credentials or private keys in frontend variables or bundles.
+You can also set `API_PROXY_TARGET` in `.env` or `.env.local`; include the full URL, for example `API_PROXY_TARGET=https://your-backend.up.railway.app`. Restart Vite after changing environment files. Shell environment variables take precedence.
+
+`VITE_API_BASE_URL` defaults to `/api`. Copy `.env.example` to `.env.local` to configure the API target or override the base URL. Cookie authentication needs a same-origin proxy or same-site HTTPS custom domains; use the deployment setup below. Never put database credentials or private keys in frontend variables or bundles.
 
 Normal frontend development/building requires Node.js and an accessible API; it does not require Python, PostgreSQL, or backend source in this checkout. Set the single account's credentials on the backend before signing in. The frontend has no credential environment variables.
 

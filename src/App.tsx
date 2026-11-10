@@ -27,7 +27,7 @@ export default function App() {
   useEffect(() => { setMenuOpen(false) }, [location.key])
   return <div className="app-shell">
     <aside className="sidebar">
-      <Link to="/transactions" className="brand"><span className="brand-mark"><Layers3 size={23} /></span>bini<span className="brand-dot">.</span></Link>
+      <Link to="/investments" className="brand"><span className="brand-mark"><Layers3 size={23} /></span>bini<span className="brand-dot">.</span></Link>
       <button className="secondary-button mobile-menu-toggle" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="mobile-navigation" onClick={() => setMenuOpen(true)}><Menu size={19} /> Menu</button>
       <div className="workspace-label">PERSONAL WORKSPACE</div>
       <nav aria-label="Main navigation">
@@ -47,15 +47,15 @@ export default function App() {
       <Route path="/pdf-unlock" element={<UnlockPdf />} />
       <Route path="/imports/new" element={<StatementUpload />} />
       <Route path="/imports/:id" element={<Review />} />
-      <Route path="*" element={<Navigate to="/transactions" replace />} />
+      <Route path="*" element={<Navigate to="/investments" replace />} />
     </Routes></main>
   </div>
 }
 
 function NavigationLinks() {
   return <>
-    <NavLink to="/transactions"><BookOpen size={18} /> Transactions</NavLink>
     <NavLink to="/investments"><Layers3 size={18} /> Investments</NavLink>
+    <NavLink to="/transactions"><BookOpen size={18} /> Transactions</NavLink>
     <NavLink to="/csv-update"><FileSpreadsheet size={18} /> Update CSV</NavLink>
     <NavLink to="/pdf-unlock"><UnlockKeyhole size={18} /> Unlock PDF</NavLink>
     <NavLink to="/imports"><UploadCloud size={18} /> Import statement</NavLink>
