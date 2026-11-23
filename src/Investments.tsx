@@ -46,6 +46,13 @@ export function Investments() {
         <Stat label="Returns received" value={money(sumMoney(data.projects.map(p => p.returned)))} hint="Capital + profit" />
         <Stat label="Bank payouts" value={money(sumMoney(data.events.filter(e => e.kind === 'cashout').map(e => e.amount)))} hint="Reported by provider" />
       </section>
+      <div className="summary-group-heading"><h2>Open & closed projects</h2><span>BDT</span></div>
+      <section className="stats-grid investment-summary-grid" aria-label="Investment totals by project status">
+        <Stat label="Open projects invested" value={money(sumMoney(data.projects.filter(p => p.status === 'active').map(p => p.invested)))} hint="Includes reinvestments" />
+        <Stat label="Open projects returns received" value={money(sumMoney(data.projects.filter(p => p.status === 'active').map(p => p.returned)))} hint="Capital + profit received so far" />
+        <Stat label="Closed projects invested" value={money(sumMoney(data.projects.filter(p => p.status === 'closed').map(p => p.invested)))} hint="Includes reinvestments" />
+        <Stat label="Closed projects returns received" value={money(sumMoney(data.projects.filter(p => p.status === 'closed').map(p => p.returned)))} hint="Final capital + profit received" />
+      </section>
       <div className="summary-group-heading"><h2>Profit & review</h2><span>BDT</span></div>
       <section className="stats-grid investment-summary-grid" aria-label="Investment profit and reconciliation">
         <Stat label="Installment profit" value={money(sumMoney(data.projects.map(p => p.classified_profit)))} hint="Classified returns only" />
